@@ -13,6 +13,7 @@ const LOADOUT_PREFIX: &str = "loadout:";
 const SAVE_ALL_LOADOUT: &str = "loadout-save-all";
 const EDIT_LOADOUTS: &str = "loadout-edit";
 const RESTART_ONBOARDING: &str = "onboarding-restart";
+const CHECK_UPDATES: &str = "check-updates";
 /// ⌘Q and the main window's close button ask the frontend first, so it can
 /// confirm before killing running commands.
 const QUIT: &str = "quit";
@@ -28,6 +29,7 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         true,
         &[
             &PredefinedMenuItem::about(h, None, None)?,
+            &MenuItem::with_id(h, CHECK_UPDATES, "Check for Updates…", true, None::<&str>)?,
             &MenuItem::with_id(h, RESTART_ONBOARDING, "Restart Onboarding", true, None::<&str>)?,
             &PredefinedMenuItem::separator(h)?,
             &PredefinedMenuItem::hide(h, None)?,
@@ -85,6 +87,8 @@ fn close_main_window(window: tauri::Window) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(pty::PtyState::default())
         .manage(agents::AgentState::default())
@@ -94,7 +98,7 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
-            if id.starts_with(LOADOUT_PREFIX) || id == SAVE_ALL_LOADOUT || id == EDIT_LOADOUTS || id == QUIT {
+            if id.starts_with(LOADOUT_PREFIX) || id == SAVE_ALL_LOADOUT || id == EDIT_LOADOUTS || id == QUIT || id == CHECK_UPDATES {
                 let _ = app.emit("menu", id);
             } else if id == RESTART_ONBOARDING {
                 let _ = onboarding::open(app);

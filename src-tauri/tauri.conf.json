@@ -38,6 +38,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0NzdBQkVFREI0MDUxRTAKUldUZ1VVRGI3cXQzcEdrRGdwMUlvSGxCN0RxbEtFenQvdmFKSVEzTWFJOG94VHVNVy8vUjY4Z3oK",
+      "endpoints": [
+        "https://github.com/kevingoenadibrata/workdesk/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

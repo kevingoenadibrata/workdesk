@@ -1,44 +1,59 @@
 ---
 name: ship
-description: Build Workdesk (the Tauri app in this repo) and install the new build over /Applications/Workdesk.app, without quitting or relaunching the running app. Use whenever the user says "ship this", "ship it", "ship", "release it", "push it to my app", "install the new build", "put this in my real app", or otherwise wants their latest changes running in the installed Workdesk rather than the dev server.
+description: Ship the current changes in the Workdesk repo through GitHub — put them on a branch, open a pull request, merge it into main — then ask whether to cut a release too (chaining into the `release` skill). Use whenever the user says "ship", "ship this", "ship it", "merge this", "PR and merge", or otherwise wants their local changes landed on main.
 ---
 
-# Ship Workdesk
+# Ship Workdesk changes
 
-"Ship this" means: build a release of Workdesk from the current source and replace the copy in `/Applications` with it, so the user's everyday app picks up the changes. There is no remote release (no git, no GitHub, no updater); shipping is local.
+"Ship" means: take the uncommitted (or unpushed) work, land it on `main` through a pull request, and then offer a release. The repo is `kevingoenadibrata/workdesk` (public). Shipping does not install anything locally (that's the `install` skill) and does not publish a release on its own (that's the `release` skill).
 
 ## Steps
 
-### 1. Ask about the version
+### 1. Look at what's being shipped
 
-The version lives in three files that must stay in sync: `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` (the `[package]` `version`). Read the current value, then ask the user, every time, whether this ship is a patch, minor or major bump, or no bump. Use AskUserQuestion with the concrete resulting numbers in the labels (e.g. "Patch → 0.1.1"), and put "No bump" last. Apply the choice to all three files. Don't touch `Cargo.lock` by hand; cargo updates it during the build.
+Run `git status --short`, `git diff --stat` and `git log origin/main..HEAD --oneline`. If there is nothing to ship (clean tree and no unpushed commits), say so and stop.
 
-### 2. Check before building
+Read the diff well enough to name the change. Don't ship things that look accidental: stray debug files, secrets, `.env` files, large binaries, or build output. Ask the user about anything doubtful instead of committing it.
 
-Run `npx tsc --noEmit -p .` from the repo root. A type error would fail the build several minutes in, so catch it now; if it fails, stop and report the errors instead of building.
+### 2. Check before committing
 
-### 3. Build
+Run `npx tsc --noEmit -p .` from the repo root, and if anything under `src-tauri/` changed, `cargo check` in `src-tauri/`. If either fails, stop and report the errors.
 
-```bash
-npm run tauri build
-```
+### 3. Branch and commit
 
-Run it from the repo root with a 10-minute timeout. It runs `npm run build` (tsc + vite) then cargo in release mode and bundles a `.app` and `.dmg`. A first or post-`cargo clean` build can take several minutes; incremental ones are faster.
+- If on `main`, create a branch named after the change, e.g. `feat/auto-updater` or `fix/tab-close-crash` (`git switch -c <name>`). If already on a feature branch, stay on it.
+- Stage the relevant files by path (not `git add -A` blindly) and commit with a short imperative subject and, if useful, a body explaining why. End the message with the attribution lines from the system reminder, if any.
+- If the change is really several unrelated changes, it's fine to make a few commits, but one PR.
 
-The output is `src-tauri/target/release/bundle/macos/Workdesk.app`. If the build fails, show the relevant error lines (not the whole log), and don't install anything. A failure in the `bundle_dmg.sh` step after the `.app` was produced is OK to ignore: only the `.app` is installed. Say so in the report.
-
-### 4. Install
+### 4. Push and open the PR
 
 ```bash
-.claude/skills/ship/scripts/install.sh src-tauri/target/release/bundle/macos/Workdesk.app
+git push -u origin <branch>
+gh pr create --base main --title "<subject>" --body "<what and why>"
 ```
 
-Install only. Never quit, kill or relaunch Workdesk, and don't `open` it: the user has processes running in its panes (this session is usually one of them), and losing them is worse than running the old build a while longer. The script swaps the bundle in /Applications (keeping the old one as a backup, restored if the copy fails) and leaves the running app alone; the new build loads the next time the user restarts Workdesk themselves. Report the installed version and remind them of that.
+The body is a few short bullets on what changed and why, plus anything the user should check by hand. End it with the PR attribution line from the system reminder, if any.
 
-### 5. Verifying
+### 5. Merge
 
-`defaults read /Applications/Workdesk.app/Contents/Info CFBundleShortVersionString` shows the installed version. The previous build is kept at `~/Library/Application Support/workdesk-ship/Workdesk.previous.app` if the user wants to roll back.
+```bash
+gh pr merge <number> --squash --delete-branch
+git switch main && git pull --ff-only
+```
+
+If the merge is refused (conflicts, failing checks), stop and report why; don't force anything. Report the PR URL.
+
+### 6. Ask about a release
+
+Read the current version from `package.json`, then ask with AskUserQuestion whether to release too, putting the resulting numbers in the labels:
+
+- "Patch release → X.Y.Z+1"
+- "Minor release → X.Y+1.0"
+- "Major release → X+1.0.0"
+- "No release"
+
+If they pick a release, invoke the `release` skill with the bump as its argument (e.g. `patch`), so it doesn't ask again. If they pick "No release", say the change is on `main` and will go out with the next release; mention `install` if they want it in their app right now.
 
 ## Notifications
 
-Only notify the user's phone if they ask (e.g. "ship this and ping me"); use the `notify-phone` skill. Send it once the install finishes, or on a build failure, send the failure.
+Only notify the user's phone if they ask; use the `notify-phone` skill when the merge (or the chained release) finishes or fails.

@@ -22,6 +22,7 @@ import { installHoldHints, installShortcuts, type Action } from "./shortcuts";
 import { runnable } from "./macros";
 import { confirmClose } from "./closeGuard";
 import { shouldOnboard } from "./firstRun";
+import { checkForUpdates, installUpdater } from "./updater";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -130,7 +131,9 @@ void listen<string>("menu", ({ payload: id }) => {
   else if (id === "loadout-edit") settings.showLoadout();
   else if (id === "quit") void quit("quit_app");
   else if (id === "close-window") void quit("close_main_window");
+  else if (id === "check-updates") void checkForUpdates(true);
 });
+installUpdater(() => confirmClose(ws.allSessions, "Workdesk", "Restart"));
 
 function newGroup() {
   sidebar.startRename("group", ws.createGroup().id);
