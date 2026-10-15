@@ -75,7 +75,7 @@ The tag must be annotated (`-a`): the workflow fails on a tag with no message. T
 
 Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,headBranch,status`) and run `gh run watch <id> --exit-status` in the background. It takes about 5–10 minutes. Don't poll; wait for it to finish.
 
-If it fails, show the failing step's log lines (`gh run view <id> --log-failed | tail -50`). The tag is already pushed, so after a fix the usual move is a new patch release, not reusing the tag; ask the user before deleting or moving any tag.
+The workflow creates the release as a draft, uploads the build into it, and publishes it last, so the updater never sees a release without its files. If it fails, show the failing step's log lines (`gh run view <id> --log-failed | tail -50`). A failed run can leave the draft behind; `gh run rerun <id>` reuses it. The tag is already pushed, so after a fix the usual move is a new patch release, not reusing the tag; ask the user before deleting or moving any tag.
 
 ### 7. Check
 
