@@ -7,6 +7,7 @@ import { THEMES, currentTheme, loadTheme, setTheme } from "./themes";
 import type { AgentStatus, AgentInfo } from "./pty";
 import type { TermSession } from "./terminal";
 import type { GroupColor } from "./themes";
+import type { Usage, UsageSource } from "./usage";
 
 /** A mock agent: `age` is how long it's been in its status, in ms. */
 interface Mock {
@@ -122,9 +123,48 @@ function agents(name: string): Agent[] {
   }));
 }
 
+// Usage limits: `left` is minutes until each window resets.
+const usageNow = (five: [used: number, left: number], week: [used: number, left: number], codex = true): Omit<Usage, "claudeSessionOpen"> => {
+  const now = Date.now();
+  const at = (left: number) => Math.round((now + left * MIN) / 1000);
+  const limits = (updatedAgo: number, f = five, w = week) => ({
+    windows: [
+      { minutes: 300, usedPercent: f[0], resetsAt: at(f[1]) },
+      { minutes: 10080, usedPercent: w[0], resetsAt: at(w[1]) },
+    ],
+    updatedAt: now - updatedAgo * MIN,
+  });
+  return { claude: limits(1), codex: codex ? limits(14, [five[0] / 2, five[1] + 40], [week[0] / 3, week[1] - 900]) : null };
+};
+
+const USAGE: Record<string, () => Usage> = {
+  "Session open": () => ({ ...usageNow([22, 192], [34, 3 * 24 * 60]), claudeSessionOpen: true }),
+  "No session": () => ({ ...usageNow([22, 192], [34, 3 * 24 * 60]), claudeSessionOpen: false }),
+  "Ahead of pace": () => ({ ...usageNow([71, 230], [58, 5 * 24 * 60]), claudeSessionOpen: true }),
+  "Near limit": () => ({ ...usageNow([94, 38], [91, 20 * 60]), claudeSessionOpen: true }),
+  "5h just reset": () => ({ ...usageNow([88, -6], [40, 4 * 24 * 60]), claudeSessionOpen: false }),
+  "No data": () => ({ claude: null, codex: null, claudeSessionOpen: false }),
+  "No Codex": () => ({ ...usageNow([22, 192], [34, 3 * 24 * 60], false), claudeSessionOpen: false }),
+};
+const USAGE_KEY = "workdesk.monitorPreview.usage";
+let usageScenario = (() => {
+  const asked = new URLSearchParams(location.search).get("usage");
+  if (asked && asked in USAGE) return asked;
+  try {
+    const saved = localStorage.getItem(USAGE_KEY);
+    if (saved && saved in USAGE) return saved;
+  } catch {}
+  return "Session open";
+})();
+const mockUsage: UsageSource = {
+  status: async () => USAGE[usageScenario](),
+  // Like the real Haiku ping: a moment's wait, then fresh numbers.
+  pingClaude: () => new Promise((done) => setTimeout(() => done({ ...usageNow([23, 191], [34, 3 * 24 * 60]), claudeSessionOpen: false }), 1500)),
+};
+
 loadTheme();
 const host = document.getElementById("preview-host")!;
-const page = new MonitorPage(host, () => {});
+const page = new MonitorPage(host, () => {}, mockUsage);
 page.open();
 
 const KEY = "workdesk.monitorPreview";
@@ -162,6 +202,20 @@ const sync = () => {
 const themeSelect = document.getElementById("preview-theme") as HTMLSelectElement;
 for (const t of THEMES) themeSelect.add(new Option(t.name, t.name, false, t.name === currentTheme().name));
 themeSelect.addEventListener("change", () => setTheme(THEMES.find((t) => t.name === themeSelect.value)!));
+
+// Usage limits
+const usageSelect = document.getElementById("preview-usage") as HTMLSelectElement;
+for (const name of Object.keys(USAGE)) usageSelect.add(new Option(name, name, false, name === usageScenario));
+usageSelect.addEventListener("change", () => {
+  usageScenario = usageSelect.value;
+  try {
+    localStorage.setItem(USAGE_KEY, usageScenario);
+  } catch {}
+  // Rebuilt, so the panel fetches right away.
+  page.toggle();
+  page.open();
+  render();
+});
 
 // Log lines (the same setting the app uses)
 const lines = document.getElementById("preview-lines") as HTMLInputElement;

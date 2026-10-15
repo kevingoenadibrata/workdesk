@@ -5,6 +5,7 @@ mod files;
 mod glow;
 mod onboarding;
 mod pty;
+mod usage;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Runtime};
@@ -128,6 +129,8 @@ pub fn run() {
             pty::pty_cwds,
             pty::pty_busy,
             agents::agent_status,
+            usage::usage_status,
+            usage::usage_ping_claude,
             dirs::home_dir,
             dirs::list_dirs,
             dirs::existing_dirs,
