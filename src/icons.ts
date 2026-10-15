@@ -2,6 +2,7 @@ import { createElement, type IconNode } from "lucide";
 
 export {
   AppWindow,
+  ArrowUpRight,
   ArrowDown,
   ArrowUp,
   AtSign,
@@ -10,6 +11,8 @@ export {
   ChevronDown,
   ChevronRight,
   Columns2,
+  Copy,
+  EthernetPort,
   FileCode,
   Folder,
   FolderGit2,

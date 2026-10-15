@@ -168,6 +168,7 @@ Hold <kbd>⌘</kbd> anywhere to see hints, or press <kbd>⌘</kbd><kbd>/</kbd> f
 | **Next / previous pane** | <kbd>⌘</kbd><kbd>]</kbd> / <kbd>⌘</kbd><kbd>[</kbd> | |
 | **Group selected tabs** | <kbd>⌘</kbd><kbd>G</kbd> | |
 | **Agent Monitor** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd> | |
+| **Local Servers** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd> | |
 | **Settings** | <kbd>⌘</kbd><kbd>,</kbd> | |
 | **Toggle sidebar** | <kbd>⌘</kbd><kbd>B</kbd> | |
 

@@ -179,6 +179,14 @@ pub fn foreground_pids(state: &PtyState, ids: &[u32]) -> Vec<(u32, libc::pid_t)>
         .collect()
 }
 
+/// The shell each PTY started with; servers it runs in the background are below it.
+pub fn shell_pids(state: &PtyState, ids: &[u32]) -> Vec<(u32, libc::pid_t)> {
+    let sessions = state.sessions.lock().unwrap();
+    ids.iter()
+        .filter_map(|&id| Some((id, sessions.get(&id)?.shell_pid? as libc::pid_t)))
+        .collect()
+}
+
 /// Working directory of the foreground process in each PTY, used to keep the
 /// list of recent directories up to date.
 #[tauri::command]
