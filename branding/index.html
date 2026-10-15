@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workdesk Brand</title>
+<link rel="icon" href="svg/web/favicon.svg" type="image/svg+xml">
+<style>
+@font-face { font-family: "Bricolage"; src: url(fonts/bricolage-700.ttf); font-weight: 700; }
+@font-face { font-family: "Bricolage"; src: url(fonts/bricolage-500.ttf); font-weight: 500; }
+@font-face { font-family: "Plex Mono"; src: url(fonts/plexmono-500.ttf); font-weight: 500; }
+:root {
+  --night: #120E0D; --ember: #1E1715; --rose: #F4C7B8; --copper: #C98F7E;
+  --terra: #C4826F; --clay: #8E5646; --blush: #FBF1EC; --line: #2C2320;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--night); color: var(--rose); font: 500 15px/1.55 "Bricolage", system-ui, sans-serif; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-inline: 24px; padding-block: 56px 96px; display: grid; gap: 72px; }
+h1 { margin: 0; }
+h1 img { height: 64px; display: block; }
+.lede { color: var(--copper); font-size: 20px; margin: 14px 0 0; }
+h2 { font-weight: 700; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--copper); margin: 0 0 18px; }
+section { display: grid; gap: 0; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.grid.wide { grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); }
+@media (max-width: 520px) { .grid.wide { grid-template-columns: 1fr; } }
+figure { margin: 0; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.plate { border-radius: 12px; display: grid; place-items: center; padding: 28px; min-height: 180px; border: 1px solid var(--line); }
+.plate img { max-width: 100%; max-height: 140px; }
+.plate.full { padding: 0; min-height: 0; overflow: hidden; }
+.plate.full img { max-height: none; width: 100%; display: block; }
+.on-night { background: var(--night); }
+.on-ember { background: var(--ember); }
+.on-blush { background: var(--blush); }
+.on-white { background: #fff; }
+.on-black { background: #000; }
+.on-photo { background: linear-gradient(135deg, #6B4A3E, #2A3B4D); }
+figcaption { display: grid; gap: 2px; font-size: 14px; }
+figcaption b { font-weight: 700; color: var(--rose); }
+figcaption code { font: 500 12px "Plex Mono", ui-monospace, monospace; color: var(--copper); overflow-wrap: anywhere; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.sw { border-radius: 12px; padding: 64px 14px 14px; border: 1px solid var(--line); display: grid; gap: 2px; }
+.sw b { font-size: 18px; }
+.sw code { font: 500 12px "Plex Mono", monospace; opacity: .8; }
+.type { display: grid; gap: 18px; padding: 28px; border: 1px solid var(--line); border-radius: 12px; background: var(--ember); }
+.type .d { font: 700 56px/1 "Bricolage"; letter-spacing: -0.025em; }
+.type .b { font: 500 22px "Bricolage"; color: var(--copper); }
+.type .m { font: 500 14px "Plex Mono", monospace; color: var(--copper); }
+.icons { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 28px; padding: 28px; border-radius: 12px; border: 1px solid var(--line); }
+.icons figure { justify-items: center; }
+.dock { background: linear-gradient(160deg, #D9C6BD, #8B6F64); }
+.dock figcaption { color: #2A1E1A; font: 500 12px "Plex Mono", monospace; }
+.dont { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+.dont .plate { position: relative; }
+.dont .plate::after { content: "✕"; position: absolute; top: 10px; right: 14px; color: #E5584A; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><img src="svg/logo/logo-horizontal-color.svg" alt="Workdesk"></h1>
+    <p class="lede">Brand kit. A desk for your terminals.</p>
+  </header>
+
+  <section>
+    <h2>App icon</h2>
+    <div class="icons dock">
+      <figure><img src="svg/app-icon/app-icon-macos.svg" width="160" height="160" alt=""><figcaption>macOS · 1024</figcaption></figure>
+      <figure><img src="svg/app-icon/app-icon-macos-light.svg" width="160" height="160" alt=""><figcaption>macOS, light</figcaption></figure>
+      <figure><img src="svg/app-icon/app-icon-macos.svg" width="64" height="64" alt=""><figcaption>Dock 64</figcaption></figure>
+      <figure><img src="svg/app-icon/app-icon-square.svg" width="120" height="120" style="border-radius:28px" alt=""><figcaption>iOS / Android</figcaption></figure>
+      <figure><img src="svg/web/favicon.svg" width="32" height="32" alt=""><figcaption>Favicon 32</figcaption></figure>
+      <figure><img src="png/web/favicon-16.png" width="16" height="16" alt=""><figcaption>16</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Logos, in color</h2>
+    <div class="grid">
+      <figure><div class="plate on-night"><img src="svg/logo/logo-horizontal-color.svg" alt=""></div><figcaption><b>Horizontal, on dark</b><code>logo-horizontal-color.svg</code></figcaption></figure>
+      <figure><div class="plate on-blush"><img src="svg/logo/logo-horizontal-color-on-light.svg" alt=""></div><figcaption><b>Horizontal, on light</b><code>logo-horizontal-color-on-light.svg</code></figcaption></figure>
+      <figure><div class="plate on-night"><img src="svg/logo/logo-stacked-color.svg" alt=""></div><figcaption><b>Stacked, on dark</b><code>logo-stacked-color.svg</code></figcaption></figure>
+      <figure><div class="plate on-blush"><img src="svg/logo/logo-stacked-color-on-light.svg" alt=""></div><figcaption><b>Stacked, on light</b><code>logo-stacked-color-on-light.svg</code></figcaption></figure>
+      <figure><div class="plate on-night"><img src="svg/mark/mark-color.svg" alt=""></div><figcaption><b>Mark, on dark</b><code>mark-color.svg</code></figcaption></figure>
+      <figure><div class="plate on-blush"><img src="svg/mark/mark-color-on-light.svg" alt=""></div><figcaption><b>Mark, on light</b><code>mark-color-on-light.svg</code></figcaption></figure>
+      <figure><div class="plate on-night"><img src="svg/logo/wordmark-color.svg" alt="" style="max-height:60px"></div><figcaption><b>Wordmark, on dark</b><code>wordmark-color.svg</code></figcaption></figure>
+      <figure><div class="plate on-blush"><img src="svg/logo/wordmark-color-on-light.svg" alt="" style="max-height:60px"></div><figcaption><b>Wordmark, on light</b><code>wordmark-color-on-light.svg</code></figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Black and white</h2>
+    <div class="grid">
+      <figure><div class="plate on-white"><img src="svg/logo/logo-horizontal-black.svg" alt=""></div><figcaption><b>Horizontal, black</b><code>logo-horizontal-black.svg</code></figcaption></figure>
+      <figure><div class="plate on-black"><img src="svg/logo/logo-horizontal-white.svg" alt=""></div><figcaption><b>Horizontal, white</b><code>logo-horizontal-white.svg</code></figcaption></figure>
+      <figure><div class="plate on-white"><img src="svg/logo/logo-stacked-black.svg" alt=""></div><figcaption><b>Stacked, black</b><code>logo-stacked-black.svg</code></figcaption></figure>
+      <figure><div class="plate on-black"><img src="svg/logo/logo-stacked-white.svg" alt=""></div><figcaption><b>Stacked, white</b><code>logo-stacked-white.svg</code></figcaption></figure>
+      <figure><div class="plate on-white"><img src="svg/mark/mark-black.svg" alt=""></div><figcaption><b>Mark, black</b><code>mark-black.svg</code></figcaption></figure>
+      <figure><div class="plate on-photo"><img src="svg/mark/mark-white.svg" alt=""></div><figcaption><b>Mark, white over imagery</b><code>mark-white.svg</code></figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Social and banners</h2>
+    <div class="grid wide">
+      <figure><div class="plate full"><img src="png/social/og-image.png" alt=""></div><figcaption><b>Link preview (OG) · 1200×630</b><code>png/social/og-image.png</code></figcaption></figure>
+      <figure><div class="plate full"><img src="png/social/github-social-preview.png" alt=""></div><figcaption><b>GitHub social preview · 1280×640</b><code>png/social/github-social-preview.png</code></figcaption></figure>
+      <figure><div class="plate full"><img src="png/banner/banner-readme.png" alt=""></div><figcaption><b>README banner · 1280×320 @2x</b><code>png/banner/banner-readme.png</code></figcaption></figure>
+      <figure><div class="plate full"><img src="png/banner/banner-x.png" alt=""></div><figcaption><b>X / Twitter header · 1500×500</b><code>png/banner/banner-x.png</code></figcaption></figure>
+      <figure><div class="plate full"><img src="png/banner/banner-linkedin.png" alt=""></div><figcaption><b>LinkedIn banner · 1584×396</b><code>png/banner/banner-linkedin.png</code></figcaption></figure>
+      <figure><div class="plate full" style="max-width:240px"><img src="png/social/avatar-800.png" alt="" style="border-radius:50%"></div><figcaption><b>Avatar · 800×800, circle-safe</b><code>png/social/avatar-800.png</code></figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Pattern and wallpaper</h2>
+    <div class="grid wide">
+      <figure><div class="plate full" style="height:240px;background:url(svg/pattern/pattern-tile.svg) 0 0/120px 120px"></div><figcaption><b>Repeating pattern</b><code>svg/pattern/pattern-tile.svg</code></figcaption></figure>
+      <figure><div class="plate full"><img src="png/wallpaper/wallpaper-2560x1600.png" alt=""></div><figcaption><b>Desktop wallpaper · 2560×1600</b><code>png/wallpaper/wallpaper-2560x1600.png</code></figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Color</h2>
+    <div class="swatches">
+      <div class="sw" style="background:var(--night);color:var(--blush)"><b>Night</b><code>#120E0D</code></div>
+      <div class="sw" style="background:var(--ember);color:var(--blush)"><b>Ember</b><code>#1E1715</code></div>
+      <div class="sw" style="background:var(--rose);color:var(--night)"><b>Rose</b><code>#F4C7B8</code></div>
+      <div class="sw" style="background:var(--copper);color:var(--night)"><b>Copper</b><code>#C98F7E</code></div>
+      <div class="sw" style="background:var(--terra);color:var(--night)"><b>Terra</b><code>#C4826F</code></div>
+      <div class="sw" style="background:var(--clay);color:var(--blush)"><b>Clay</b><code>#8E5646</code></div>
+      <div class="sw" style="background:var(--blush);color:var(--night)"><b>Blush</b><code>#FBF1EC</code></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Type</h2>
+    <div class="type">
+      <div class="d">Workdesk</div>
+      <div class="b">A desk for your terminals. Bricolage Grotesque Medium for headings and copy.</div>
+      <div class="m">~/projects/workdesk $ npm run tauri dev · IBM Plex Mono for code</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Don't</h2>
+    <div class="dont">
+      <figure><div class="plate on-blush"><img src="svg/mark/mark-color.svg" alt=""></div><figcaption>Use the dark-background colors on light backgrounds</figcaption></figure>
+      <figure><div class="plate on-night"><img src="svg/mark/mark-color.svg" alt="" style="transform:scaleX(1.4)"></div><figcaption>Stretch or squash it</figcaption></figure>
+      <figure><div class="plate on-night"><img src="svg/mark/mark-color.svg" alt="" style="transform:rotate(20deg)"></div><figcaption>Rotate it</figcaption></figure>
+      <figure><div class="plate on-photo"><img src="svg/mark/mark-color-on-light.svg" alt=""></div><figcaption>Put the color mark on busy imagery (use white)</figcaption></figure>
+    </div>
+  </section>
+</div>
+</body>
+</html>

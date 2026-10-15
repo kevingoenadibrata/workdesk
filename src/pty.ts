@@ -1,0 +1,61 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
+
+export interface PtyHandle {
+  id: number;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+
+const ignore = () => {};
+
+export async function spawnPty(opts: {
+  cols: number;
+  rows: number;
+  cwd?: string;
+  onData: (bytes: Uint8Array) => void;
+  onExit: (code: number) => void;
+}): Promise<PtyHandle> {
+  const onData = new Channel<ArrayBuffer | number[]>();
+  onData.onmessage = (msg) => opts.onData(new Uint8Array(msg));
+  const onExit = new Channel<number>();
+  onExit.onmessage = opts.onExit;
+
+  const id = await invoke<number>("pty_spawn", { cols: opts.cols, rows: opts.rows, cwd: opts.cwd, onData, onExit });
+  return {
+    id,
+    write: (data) => invoke("pty_write", { id, data }).catch(ignore),
+    resize: (cols, rows) => invoke("pty_resize", { id, cols, rows }).catch(ignore),
+    kill: () => invoke("pty_kill", { id }).catch(ignore),
+  };
+}
+
+export function processNames(ids: number[]): Promise<Record<string, string>> {
+  return invoke("pty_process_names", { ids });
+}
+
+export type AgentStatus = "thinking" | "working" | "waiting" | "idle" | "error" | "unknown";
+
+/** A coding agent running in a PTY, as read from its session files. */
+export interface AgentInfo {
+  harness: "claude" | "codex" | "opencode";
+  status: AgentStatus;
+  /** The last thing the user asked. */
+  prompt: string | null;
+  /** The running tool, what it's waiting on, or the error. */
+  detail: string | null;
+}
+
+/** The coding agent in each PTY that's running one, by PTY id. */
+export function agentStatus(ids: number[]): Promise<Record<string, AgentInfo>> {
+  return invoke("agent_status", { ids });
+}
+
+export function processCwds(ids: number[]): Promise<Record<string, string>> {
+  return invoke("pty_cwds", { ids });
+}
+
+/** The command running in the foreground of each busy PTY (not at the shell prompt), by PTY id. */
+export function busyProcesses(ids: number[]): Promise<Record<string, string>> {
+  return invoke("pty_busy", { ids });
+}

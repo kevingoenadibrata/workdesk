@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Glow</title>
+    <!--
+      Drawn in a transparent, click-through window over a whole display (see
+      src-tauri/src/glow.rs): light pours around the edges, sweeps once, and
+      fades. Colors come from window.__GLOW_COLORS.
+    -->
+    <style>
+      @property --turn {
+        syntax: "<angle>";
+        inherits: true;
+        initial-value: 0deg;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      .glow {
+        --c1: #f4c7b8;
+        --c2: #c98f7e;
+        --c3: #c4826f;
+        --c4: #fbf1ec;
+        position: fixed;
+        inset: 0;
+        animation:
+          life 3900ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards,
+          sweep 3900ms cubic-bezier(0.35, 0, 0.15, 1) forwards;
+      }
+
+      /* A frame of the rotating gradient: the whole box minus its content box. */
+      .frame {
+        position: absolute;
+        inset: 0;
+        background: conic-gradient(from var(--turn) at 50% 50%, var(--c1), var(--c2), var(--c3), var(--c4), var(--c2), var(--c1));
+        -webkit-mask:
+          linear-gradient(#000 0 0) content-box,
+          linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+      }
+
+      /* Wide and blurred: the light spilling onto the screen. */
+      .haze {
+        position: absolute;
+        inset: 0;
+        filter: blur(48px);
+        opacity: 0.85;
+      }
+      .haze .frame {
+        padding: 46px;
+      }
+
+      /* A tighter bloom hugging the edge. */
+      .bloom {
+        position: absolute;
+        inset: 0;
+        filter: blur(14px);
+      }
+      .bloom .frame {
+        padding: 10px;
+      }
+
+      /* The bright line right at the edge. */
+      .line .frame {
+        padding: 2px;
+        opacity: 0.9;
+      }
+
+      @keyframes life {
+        0% {
+          opacity: 0;
+          transform: scale(1.04);
+        }
+        18% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        62% {
+          opacity: 1;
+        }
+        100% {
+          opacity: 0;
+        }
+      }
+
+      @keyframes sweep {
+        from {
+          --turn: 0deg;
+        }
+        to {
+          --turn: 300deg;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .glow {
+          animation: life 3900ms ease forwards;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="glow">
+      <div class="haze"><div class="frame"></div></div>
+      <div class="bloom"><div class="frame"></div></div>
+      <div class="line"><div class="frame"></div></div>
+    </div>
+    <script>
+      const colors = Array.isArray(window.__GLOW_COLORS) ? window.__GLOW_COLORS : [];
+      const glow = document.querySelector(".glow");
+      colors.slice(0, 4).forEach((c, i) => glow.style.setProperty(`--c${i + 1}`, c));
+    </script>
+  </body>
+</html>
