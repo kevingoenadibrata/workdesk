@@ -809,6 +809,24 @@ body.sidebar-collapsed:not(.sidebar-peek) #titlebar {
   display: none;
 }
 
+/* Split weights can sum below 1, and a lone flex item with grow < 1 only takes that fraction of the space. */
+.panes.maximized .pane-col:has(.pane.maximized),
+.panes.maximized .pane.maximized {
+  flex-grow: 1 !important;
+}
+
+/* The maximized pane floats: inset from the tab's edges with rounded corners. */
+.panes.maximized {
+  padding: 10px;
+}
+
+.panes.maximized .pane.maximized {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+
 .pane.maximized .pane-maximize {
   color: var(--accent);
 }
