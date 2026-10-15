@@ -23,6 +23,7 @@ import { runnable } from "./macros";
 import { confirmClose } from "./closeGuard";
 import { shouldOnboard } from "./firstRun";
 import { checkForUpdates, installUpdater } from "./updater";
+import { applyAppIcon } from "./appIcon";
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 
@@ -439,6 +440,7 @@ setSidebarCollapsed(startCollapsed);
 const saved = loadSession();
 if (!saved || !ws.restore(saved)) ws.newTab();
 keepSessionSaved(ws);
+applyAppIcon();
 ws.startTitlePolling();
 monitor.start();
 

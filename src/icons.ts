@@ -1,6 +1,7 @@
 import { createElement, type IconNode } from "lucide";
 
 export {
+  AppWindow,
   ArrowDown,
   ArrowUp,
   AtSign,
