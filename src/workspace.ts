@@ -551,10 +551,42 @@ export class Workspace {
   /** Makes the tab's focused pane fill the tab, or puts the grid back. */
   toggleMaximized(tab: Tab | undefined = this.activeTab) {
     if (!tab || tab.sessions.length < 2) return;
+    const pane = tab.focused.pane;
+    const before = pane.getBoundingClientRect();
     tab.maximized = tab.maximized ? null : tab.focused;
     tab.layout();
     tab.focused.focus();
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) this.animateMaximize(tab, pane, before);
     this.emit();
+  }
+
+  /**
+   * Grows (or shrinks) the pane from where it was to where layout put it, so
+   * maximizing doesn't snap. Panes coming back on restore fade in underneath.
+   */
+  private animateMaximize(tab: Tab, pane: HTMLElement, before: DOMRect) {
+    const after = pane.getBoundingClientRect();
+    if (!after.width || !after.height) return;
+    const timing = { duration: 240, easing: "cubic-bezier(0.2, 0, 0, 1)" };
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    const sx = before.width / after.width;
+    const sy = before.height / after.height;
+    pane.style.zIndex = "5";
+    pane.style.position = "relative";
+    pane
+      .animate(
+        [{ transformOrigin: "0 0", transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` }, { transformOrigin: "0 0", transform: "none" }],
+        timing,
+      )
+      .finished.catch(() => {})
+      .finally(() => {
+        pane.style.zIndex = "";
+        pane.style.position = "";
+      });
+    if (!tab.maximized) {
+      for (const s of tab.sessions) if (s.pane !== pane) s.pane.animate([{ opacity: 0 }, { opacity: 1 }], timing);
+    }
   }
 
   /** Brings back a maximized tab's other panes, so they can be focused. */
