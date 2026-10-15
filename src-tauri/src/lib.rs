@@ -1,4 +1,5 @@
 mod agents;
+mod appicon;
 mod dirs;
 mod files;
 mod glow;
@@ -116,6 +117,7 @@ pub fn run() {
             set_loadout_menu,
             quit_app,
             close_main_window,
+            appicon::set_app_icon,
             glow::edge_glow,
             onboarding::open_onboarding,
             pty::pty_spawn,

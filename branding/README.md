@@ -37,6 +37,7 @@ Tagline: **A desk for your terminals.**
 | Need | File |
 |------|------|
 | Dock / Finder icon (macOS) | `png/app-icon/app-icon-macos-1024.png` (the source for `tauri icon`) |
+| Alternate Dock icons (Settings → Appearance → App icon) | `svg/app-icon/variants/*.svg`, rendered into `src-tauri/icons/variants/` and `public/app-icons/` |
 | iOS / Android / Windows tile (masked by the OS) | `svg/app-icon/app-icon-square.svg` |
 | Browser tab | `svg/web/favicon.svg` + `png/web/favicon-32.png` |
 | Home-screen / PWA | `png/web/apple-touch-icon.png`, `icon-192.png`, `icon-512.png` |

@@ -128,15 +128,19 @@ for (const [k, s] of Object.entries(SCHEMES)) {
 // ---------- 3. app icons ----------
 const plateDefs = (id, top, bottom) =>
   `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`;
+// The macOS plate: a rounded square with a soft top-to-bottom gradient and a hairline edge.
+function plateIcon({ top, bottom, edge, a, b, under = '', over = '' }) {
+  return svg(1024, 1024,
+    plateDefs('p', top, bottom) +
+    `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#p)"/>` + under +
+    `<rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="${edge}" stroke-width="2"/>` +
+    mark({ a, b }, 824 * 0.62, 512, 512) + over);
+}
 function macIcon(dark = true) {
   const s = dark ? SCHEMES.dark : SCHEMES.light;
-  const [top, bot] = dark ? ['#211917', C.night] : ['#FFFFFF', '#F6E6DE'];
+  const [top, bottom] = dark ? ['#211917', C.night] : ['#FFFFFF', '#F6E6DE'];
   const edge = dark ? 'rgba(255,255,255,0.07)' : 'rgba(18,14,13,0.08)';
-  return svg(1024, 1024,
-    plateDefs('p', top, bot) +
-    `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#p)"/>` +
-    `<rect x="101" y="101" width="822" height="822" rx="184" fill="none" stroke="${edge}" stroke-width="2"/>` +
-    mark(s, 824 * 0.62, 512, 512));
+  return plateIcon({ top, bottom, edge, a: s.a, b: s.b });
 }
 emit('app-icon/app-icon-macos.svg', macIcon(true), [
   { name: 'app-icon/app-icon-macos-1024.png', w: 1024 },
@@ -235,6 +239,40 @@ emit('wallpaper/wallpaper-2560x1600.svg', wallpaper(2560, 1600), [{ name: 'wallp
     b += `<rect x="${i * cw}" width="${cw}" height="${H}" fill="${hex}"/><path d="${nm.d}" fill="${fg}"/><path d="${hx.d}" fill="${fg}" opacity="0.75"/>`;
   });
   emit('palette.svg', svg(W, H, b), [{ name: 'palette.png', w: 1200 }]);
+}
+
+// ---------- 8. app icon variants ----------
+// Alternate Dock icons picked in Settings → Appearance. The app embeds the
+// 512px renders, and Settings shows the 256px ones.
+const DARK_EDGE = 'rgba(255,255,255,0.07)';
+const LIGHT_EDGE = 'rgba(18,14,13,0.08)';
+// A soft light behind the mark, clipped to the plate.
+const halo = (color, opacity) =>
+  `<defs><radialGradient id="h" cx="512" cy="512" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${color}" stop-opacity="${opacity}"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></radialGradient></defs>` +
+  `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#h)"/>`;
+// CRT scanlines, clipped to the plate.
+const scanlines = `<defs><pattern id="s" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="3" fill="#000" opacity="0.35"/></pattern></defs>` +
+  `<rect x="100" y="100" width="824" height="824" rx="185" fill="url(#s)"/>`;
+const VARIANTS = {
+  classic:  { top: '#211917', bottom: C.night, edge: DARK_EDGE, a: C.rose, b: C.copper },
+  light:    { top: '#FFFFFF', bottom: '#F6E6DE', edge: LIGHT_EDGE, a: C.terra, b: C.clay },
+  copper:   { top: '#D69A87', bottom: '#9C604F', edge: 'rgba(255,255,255,0.18)', a: C.blush, b: '#4A2A22' },
+  ember:    { top: '#2A1A15', bottom: '#0E0908', edge: DARK_EDGE, a: '#FFB38A', b: '#E0663D', under: halo('#E0663D', 0.35) },
+  midnight: { top: '#1F2747', bottom: '#0B0F1E', edge: DARK_EDGE, a: '#D3DBFF', b: '#8495E6' },
+  forest:   { top: '#1C2B22', bottom: '#0C1410', edge: DARK_EDGE, a: '#CDE8D2', b: '#7FB38E' },
+  ocean:    { top: '#1E8C9A', bottom: '#0D4A63', edge: 'rgba(255,255,255,0.14)', a: '#FFFFFF', b: '#A8EEF0' },
+  sunset:   { top: '#FFB36B', bottom: '#D9467A', edge: 'rgba(255,255,255,0.2)', a: '#FFFFFF', b: '#FFE2C7' },
+  graphite: { top: '#2B2B2E', bottom: '#111113', edge: DARK_EDGE, a: '#F2F2F2', b: '#9A9AA0' },
+  phosphor: { top: '#0C140D', bottom: '#030604', edge: 'rgba(80,255,120,0.12)', a: '#7CFF8A', b: '#2FBF55', under: halo('#2FBF55', 0.22), over: scanlines },
+};
+for (const [id, v] of Object.entries(VARIANTS)) {
+  const out = plateIcon(v);
+  emit(`app-icon/variants/${id}.svg`, out, [{ name: `app-icon/variants/${id}-1024.png`, w: 1024 }]);
+  for (const [dir, w] of [['../src-tauri/icons/variants', 512], ['../public/app-icons', 256]]) {
+    const dest = path.join(OUT, dir, `${id}.png`);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, new Resvg(out, { fitTo: { mode: 'width', value: w }, background: 'rgba(0,0,0,0)' }).render().asPng());
+  }
 }
 
 fs.writeFileSync(path.join(OUT, 'tokens.json'), JSON.stringify({ color: C, font: { display: 'Bricolage Grotesque 700', body: 'Bricolage Grotesque 500', mono: 'IBM Plex Mono 500' }, tagline: TAGLINE }, null, 2) + '\n');

@@ -4,6 +4,7 @@ import { cleanName, loadMacros, saveMacros, type Macro } from "./macros";
 import { kbd, kbdFor } from "./kbd";
 import type { IconNode } from "lucide";
 import {
+  AppWindow,
   AtSign,
   Check,
   ChevronRight,
@@ -22,6 +23,7 @@ import {
   Type,
   icon,
 } from "./icons";
+import { APP_ICONS, appIconUrl, currentAppIcon, setAppIcon } from "./appIcon";
 import { LoadoutEditor } from "./loadoutEditor";
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES, MIN_LOG_LINES, logLines, setLogLines } from "./monitorSettings";
 
@@ -269,10 +271,10 @@ export class Settings extends Page {
     return focus;
   }
 
-  /** Font settings, the default color, then the theme gallery; returns the theme search box to focus. */
+  /** Font settings, the default color, the Dock icon, then the theme gallery; returns the theme search box to focus. */
   private buildAppearance(content: HTMLElement) {
     const section = this.buildThemes();
-    content.append(this.buildFont(), this.buildDefaultColor(), this.buildMonitor(), section);
+    content.append(this.buildFont(), this.buildDefaultColor(), this.buildAppIcon(), this.buildMonitor(), section);
     return section.querySelector<HTMLElement>(".theme-search input");
   }
 
@@ -431,6 +433,32 @@ export class Settings extends Page {
     const field = el("label", "font-field monitor-lines-field");
     field.append(el("span", "font-label", "Log lines"), input);
     section.append(sectionTitle("Agent Monitor", Radar), intro, field);
+    return section;
+  }
+
+  private buildAppIcon() {
+    const section = el("section", "page-section");
+    const intro = el("p", "page-intro", "The icon Workdesk shows in the Dock while it runs. Finder and Launchpad keep the classic one.");
+    const row = el("div", "app-icon-grid");
+    row.setAttribute("role", "radiogroup");
+    row.setAttribute("aria-label", "App icon");
+    const picked = currentAppIcon();
+    for (const [id, name] of APP_ICONS) {
+      const b = el("button", "app-icon-option");
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(id === picked));
+      const img = el("img", "");
+      img.src = appIconUrl(id);
+      img.alt = "";
+      img.draggable = false;
+      b.append(img, el("span", "app-icon-name", name));
+      b.addEventListener("click", () => {
+        setAppIcon(id);
+        for (const other of row.children) other.setAttribute("aria-checked", String(other === b));
+      });
+      row.append(b);
+    }
+    section.append(sectionTitle("App icon", AppWindow), intro, row);
     return section;
   }
 
