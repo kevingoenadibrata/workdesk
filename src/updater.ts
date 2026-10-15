@@ -22,7 +22,10 @@ let restartGuard: () => Promise<boolean> = async () => true;
  */
 export function installUpdater(confirmRestart: () => Promise<boolean>) {
   restartGuard = confirmRestart;
-  if (import.meta.env.DEV) return;
+  if (import.meta.env.DEV) {
+    if (import.meta.env.VITE_MOCK_UPDATE) setTimeout(mockUpdate, 1500);
+    return;
+  }
   setTimeout(() => void checkForUpdates(false), FIRST_CHECK_MS);
   setInterval(() => void checkForUpdates(false), CHECK_EVERY_MS);
 }
@@ -32,11 +35,11 @@ export async function checkForUpdates(manual: boolean) {
   if (busy) return;
   if (installed) return showInstalled(installed);
   busy = true;
-  if (manual) show("Checking for updates…", []);
+  if (manual) note("Checking for updates…");
   try {
     const update = await check();
     if (!update) {
-      if (manual) flash(`You're up to date (${await getVersion()}).`);
+      if (manual) flash(`You're up to date on ${await getVersion()}.`);
     } else if (manual || !dismissed.has(update.version)) {
       offer(update);
     }
@@ -48,24 +51,46 @@ export async function checkForUpdates(manual: boolean) {
 }
 
 function offer(update: Update) {
-  show(`Workdesk ${update.version} is available.`, [
-    { label: "Later", action: () => (dismissed.add(update.version), hide()) },
-    { label: "Install", primary: true, action: () => void install(update) },
-  ]);
+  card({
+    eyebrow: "Update available",
+    version: update.version,
+    meta: `You are on v${update.currentVersion}`,
+    buttons: [
+      { label: "Later", action: () => (dismissed.add(update.version), hide()) },
+      { label: "Install", primary: true, action: () => void install(update) },
+    ],
+  });
+}
+
+/** Dev only (`VITE_MOCK_UPDATE=1`): walks the cards through a fake update. */
+function mockUpdate() {
+  const fake = {
+    version: "9.9.9",
+    currentVersion: "0.2.6",
+    async downloadAndInstall(onEvent: (e: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => void) {
+      onEvent({ event: "Started", data: { contentLength: 100 } });
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 120));
+        onEvent({ event: "Progress", data: { chunkLength: 4 } });
+      }
+      onEvent({ event: "Finished" });
+    },
+  };
+  offer(fake as unknown as Update);
 }
 
 async function install(update: Update) {
   busy = true;
   let total = 0;
   let got = 0;
-  show("Downloading update…", []);
+  card({ eyebrow: "Downloading", version: update.version, meta: "Starting download…", progress: 0 });
   try {
     await update.downloadAndInstall((event) => {
       if (event.event === "Started") total = event.data.contentLength ?? 0;
       else if (event.event === "Progress") {
         got += event.data.chunkLength;
-        if (total) setText(`Downloading update… ${Math.round((got / total) * 100)}%`);
-      } else setText("Installing update…");
+        if (total) setProgress(got / total, `Downloading… ${Math.round((got / total) * 100)}%`);
+      } else setProgress(1, "Installing…");
     });
     installed = update.version;
     showInstalled(update.version);
@@ -77,56 +102,134 @@ async function install(update: Update) {
 }
 
 function showInstalled(version: string) {
-  show(`Workdesk ${version} is installed. Restart to use it.`, [
-    { label: "Later", action: hide },
-    {
-      label: "Restart",
-      primary: true,
-      action: async () => {
-        hide();
-        if (await restartGuard()) await relaunch();
+  card({
+    eyebrow: "Installed",
+    version,
+    meta: "Restart Workdesk to start using it",
+    buttons: [
+      { label: "Later", action: hide },
+      {
+        label: "Restart",
+        primary: true,
+        action: async () => {
+          hide();
+          if (import.meta.env.DEV) return void setTimeout(mockUpdate, 1500);
+          if (await restartGuard()) await relaunch();
+        },
       },
-    },
-  ]);
+    ],
+  });
 }
 
 type Button = { label: string; primary?: boolean; action: () => void };
+type Card = {
+  eyebrow: string;
+  version: string;
+  meta: string;
+  buttons?: Button[];
+  /** 0–1; shows a progress bar in place of the buttons. */
+  progress?: number;
+};
 
-function show(text: string, buttons: Button[]) {
-  hide();
-  toast = document.createElement("div");
-  toast.className = "update-toast";
-  toast.setAttribute("role", "status");
-  const p = Object.assign(document.createElement("p"), { className: "update-text", textContent: text });
-  toast.append(p);
-  if (buttons.length) {
-    const row = Object.assign(document.createElement("div"), { className: "confirm-buttons" });
-    for (const b of buttons) {
-      const el = Object.assign(document.createElement("button"), {
-        className: "confirm-button" + (b.primary ? " primary" : ""),
-        textContent: b.label,
-      });
-      el.addEventListener("click", b.action);
-      row.append(el);
-    }
-    toast.append(row);
-  }
-  document.body.append(toast);
+function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string) {
+  const e = document.createElement(tag);
+  e.className = className;
+  if (text !== undefined) e.textContent = text;
+  return e;
 }
 
-function setText(text: string) {
-  const p = toast?.querySelector(".update-text");
-  if (p) p.textContent = text;
+/**
+ * Cards sit in the sidebar just above its footer (beside the rail when it's
+ * collapsed), or in the window's corner when the sidebar is hidden.
+ */
+function mount(node: HTMLElement) {
+  const sidebar = document.getElementById("sidebar");
+  const footer = sidebar?.querySelector(".sidebar-footer");
+  if (sidebar && footer && !document.body.classList.contains("sidebar-hidden")) footer.before(node);
+  else {
+    node.classList.add("floating");
+    document.body.append(node);
+  }
+}
+
+function card(c: Card) {
+  hide();
+  const root = el("div", "update-card");
+  root.setAttribute("role", "status");
+  const face = el("div", "update-face");
+  const top = el("div", "update-eyebrow");
+  top.append(el("span", "update-dot"), c.eyebrow);
+  face.append(top, el("div", "update-version", `v${c.version}`), el("p", "update-meta", c.meta));
+  if (c.progress !== undefined) {
+    const bar = el("div", "update-progress");
+    bar.append(el("div", "update-progress-fill"));
+    face.append(bar);
+  }
+  if (c.buttons?.length) {
+    const row = el("div", "update-buttons");
+    for (const b of c.buttons) {
+      const btn = el("button", "update-button" + (b.primary ? " primary" : ""), b.label);
+      btn.addEventListener("click", b.action);
+      row.append(btn);
+    }
+    face.append(row);
+  }
+  root.append(el("div", "update-glow"), face, el("div", "update-foil"), el("div", "update-glare"));
+  tilt(root);
+  toast = root;
+  mount(root);
+  if (c.progress !== undefined) setProgress(c.progress);
+}
+
+/** A plain one-line card, for checking and results. */
+function note(text: string) {
+  hide();
+  const root = el("div", "update-card note");
+  root.setAttribute("role", "status");
+  const face = el("div", "update-face");
+  face.append(el("p", "update-meta", text));
+  root.append(face);
+  toast = root;
+  mount(root);
+}
+
+/** The card leans toward the pointer and its foil follows it. */
+function tilt(root: HTMLElement) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  root.addEventListener("pointermove", (e) => {
+    const r = root.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    root.classList.add("tilting");
+    root.style.setProperty("--px", `${x * 100}%`);
+    root.style.setProperty("--py", `${y * 100}%`);
+    root.style.setProperty("--rx", `${(0.5 - y) * 10}deg`);
+    root.style.setProperty("--ry", `${(x - 0.5) * 12}deg`);
+  });
+  root.addEventListener("pointerleave", () => {
+    root.classList.remove("tilting");
+    for (const k of ["--px", "--py", "--rx", "--ry"]) root.style.removeProperty(k);
+  });
+}
+
+function setProgress(fraction: number, text?: string) {
+  toast?.style.setProperty("--progress", String(Math.min(1, Math.max(0, fraction))));
+  const meta = toast?.querySelector(".update-meta");
+  if (meta && text) meta.textContent = text;
 }
 
 /** A message that dismisses itself. */
 function flash(text: string) {
-  show(text, []);
+  note(text);
   const mine = toast;
   setTimeout(() => toast === mine && hide(), 4000);
 }
 
 function hide() {
-  toast?.remove();
+  const old = toast;
   toast = null;
+  if (!old) return;
+  old.classList.add("leaving");
+  old.addEventListener("animationend", () => old.remove(), { once: true });
+  setTimeout(() => old.remove(), 300);
 }
