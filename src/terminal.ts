@@ -5,9 +5,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { fileLinkProvider } from "./filelinks";
-import { spawnPty, type PtyHandle } from "./pty";
+import { gitBranches, gitCheckout, gitStatus, spawnPty, type GitInfo, type PtyHandle } from "./pty";
+import { closeBranchPicker, openBranchPicker } from "./branchpicker";
 import { homeDir } from "./recents";
-import { ArrowDown, ArrowUp, CaseSensitive, Maximize2, Minimize2, Search, X, icon } from "./icons";
+import { ArrowDown, ArrowUp, CaseSensitive, FolderGit2, GitBranch, Maximize2, Minimize2, Search, X, icon } from "./icons";
 import { currentTheme, onThemeChange, type Theme } from "./themes";
 import { currentFont, fontStack, onFontChange } from "./fonts";
 
@@ -59,6 +60,10 @@ export class TermSession {
   private find?: { bar: HTMLDivElement; input: HTMLInputElement; count: HTMLSpanElement; caseButton: HTMLButtonElement };
   private caseSensitive = false;
   private maximizeButton: HTMLButtonElement;
+  /** Floating cards over the terminal showing the git repo it's in; hidden outside one. */
+  private statusBar: HTMLDivElement;
+  private gitKey = "";
+  private gitError?: { el: HTMLElement; timer: number };
   private pty?: PtyHandle;
   private disposed = false;
 
@@ -96,7 +101,10 @@ export class TermSession {
     this.header.append(this.headerTitle, this.maximizeButton, close);
     this.el = document.createElement("div");
     this.el.className = "term";
-    this.pane.append(this.header, this.el);
+    this.statusBar = document.createElement("div");
+    this.statusBar.className = "pane-status";
+    this.statusBar.hidden = true;
+    this.pane.append(this.header, this.el, this.statusBar);
     host.appendChild(this.pane);
 
     close.addEventListener("click", (e) => {
@@ -188,6 +196,104 @@ export class TermSession {
     this.maximizeButton.title = name;
     this.maximizeButton.setAttribute("aria-label", name);
     this.maximizeButton.replaceChildren(icon(on ? Minimize2 : Maximize2, 11));
+  }
+
+  /** Shows the git repo the shell is in on the status bar, or hides it (`null`) outside one. */
+  setGit(info: GitInfo | null) {
+    const key = info ? [info.repo, info.branch, info.added, info.removed, info.ahead, info.behind].join("\0") : "";
+    if (key === this.gitKey) return;
+    this.gitKey = key;
+    this.statusBar.hidden = !info;
+    if (info) {
+      const item = (node: Parameters<typeof icon>[0], text: string, cls: string) => {
+        const el = document.createElement("span");
+        el.className = `pane-status-item ${cls}`;
+        const label = document.createElement("span");
+        label.className = "pane-status-label";
+        label.textContent = text;
+        el.append(icon(node, 12), label);
+        return el;
+      };
+      const changes = document.createElement("span");
+      changes.className = "pane-status-changes";
+      const added = document.createElement("span");
+      added.className = "pane-status-added";
+      added.textContent = `+${info.added}`;
+      const removed = document.createElement("span");
+      removed.className = "pane-status-removed";
+      removed.textContent = `-${info.removed}`;
+      changes.append(added, removed);
+      changes.title = "Lines changed since the last commit";
+      const branch = item(GitBranch, info.branch || "no commits", "pane-status-branch");
+      branch.title = "Switch branch";
+      // Like Warp: commits not yet pushed (↑) and not yet pulled (↓).
+      const sync = [info.ahead && `↑${info.ahead}`, info.behind && `↓${info.behind}`].filter(Boolean).join(" ");
+      if (sync) branch.append(Object.assign(document.createElement("span"), { className: "pane-status-sync", textContent: sync }));
+      branch.addEventListener("mousedown", (e) => e.preventDefault());
+      branch.addEventListener("click", () => void this.openBranchMenu(branch, info.branch));
+      this.statusBar.replaceChildren(item(FolderGit2, info.repo, "pane-status-repo"), branch, changes);
+      if (this.gitError) this.statusBar.prepend(this.gitError.el);
+    }  }
+
+  private get dir(): string {
+    return this.cwd || this.startCwd;
+  }
+
+  /** Opens a searchable branch list above the branch card; picking one checks it out. */
+  private async openBranchMenu(anchor: HTMLElement, current: string) {
+    const dir = this.dir;
+    let branches: string[];
+    try {
+      branches = await gitBranches(dir);
+    } catch (e) {
+      return this.showGitError(String(e));
+    }
+    anchor.classList.add("open");
+    openBranchPicker(
+      anchor,
+      branches,
+      current,
+      ({ branch, create }) => {
+        anchor.classList.remove("open");
+        if (branch === current && !create) this.focus();
+        else void this.checkout(dir, branch, create);
+      },
+      () => {
+        anchor.classList.remove("open");
+        this.focus();
+      },
+    );
+  }
+
+  private async checkout(dir: string, branch: string, create: boolean) {
+    this.focus();
+    try {
+      await gitCheckout(dir, branch, create);
+    } catch (e) {
+      this.showGitError(String(e));
+    }
+    const status = await gitStatus([dir]).catch(() => null);
+    if (status && dir === this.dir) this.setGit(status[dir] ?? null);
+  }
+
+  /** Shows git's complaint as a card beside the others for a few seconds. */
+  private showGitError(message: string) {
+    closeBranchPicker();
+    if (this.gitError) {
+      clearTimeout(this.gitError.timer);
+      this.gitError.el.remove();
+    }
+    const el = document.createElement("span");
+    el.className = "pane-status-error";
+    // git's first line is the gist ("error: Your local changes … would be overwritten").
+    el.textContent = message.split("\n")[0].replace(/^(error|fatal): /, "");
+    el.title = message;
+    const timer = window.setTimeout(() => {
+      el.remove();
+      if (this.gitError?.el === el) this.gitError = undefined;
+    }, 6000);
+    this.gitError = { el, timer };
+    this.statusBar.prepend(el);
   }
 
   // ---- find ----

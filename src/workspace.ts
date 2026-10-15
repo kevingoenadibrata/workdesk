@@ -1,6 +1,6 @@
 import { TermSession } from "./terminal";
 import { confirmClose } from "./closeGuard";
-import { processCwds, processNames } from "./pty";
+import { gitStatus, processCwds, processNames } from "./pty";
 import { touchRecent } from "./recents";
 import { findMacro, runnable } from "./macros";
 import { normalizePath, tildePath } from "./favorites";
@@ -1207,5 +1207,34 @@ export class Workspace {
       }
       if (changed) this.emit();
     }, intervalMs);
+  }
+
+  /** Keeps the git status bar of each pane in the active tab up to date. */
+  startGitPolling(intervalMs = 2000) {
+    let busy = false;
+    const poll = async () => {
+      const sessions = this.activeTab?.sessions ?? [];
+      if (busy || sessions.length === 0) return;
+      busy = true;
+      try {
+        const dirs = [...new Set(sessions.map((s) => s.cwd || s.startCwd).filter(Boolean))];
+        const status = await gitStatus(dirs).catch(() => null);
+        if (!status) return;
+        for (const s of sessions) s.setGit(status[s.cwd || s.startCwd] ?? null);
+      } finally {
+        busy = false;
+      }
+    };
+    setInterval(() => void poll(), intervalMs);
+    // Switching tabs or changing directory shouldn't wait out the interval.
+    let last = "";
+    this.onChange(() => {
+      const tab = this.activeTab;
+      const key = tab ? `${tab.id}\0${tab.sessions.map((s) => s.cwd || s.startCwd).join("\0")}` : "";
+      if (key !== last) {
+        last = key;
+        void poll();
+      }
+    });
   }
 }

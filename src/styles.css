@@ -4567,3 +4567,159 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 .confirm-button.primary:hover {
   background: color-mix(in srgb, var(--accent) 85%, var(--text));
 }
+
+/* ---------- pane status bar (git) ---------- */
+
+/* Floats over the terminal's bottom-right corner, one card per fact; clicks pass through to the terminal. */
+.pane {
+  position: relative;
+}
+
+.pane-status {
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 36px);
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pane-status[hidden] {
+  display: none;
+}
+
+.panes.split .pane:not(.focused) .pane-status {
+  opacity: 0.6;
+}
+
+.pane-status-item,
+.pane-status-changes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--raised) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgb(0 0 0 / calc(0.2 * var(--shadow-k)));
+}
+
+.pane-status-item .icon {
+  flex: none;
+}
+
+.pane-status-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pane-status-changes {
+  flex: none;
+  gap: 6px;
+}
+
+.pane-status-added {
+  color: var(--group-green, #4ade80);
+}
+
+.pane-status-removed {
+  color: var(--danger);
+}
+
+.pane-status-branch {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pane-status-branch:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 16%, transparent);
+}
+
+.pane-status-error {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 6px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--raised) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto;
+}
+
+.pane-status-branch.open {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.pane-status-sync {
+  color: var(--accent);
+}
+
+/* Searchable branch switcher, opening upwards from the branch card. */
+.branch-picker {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.branch-search {
+  height: 28px;
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+
+.branch-search:focus {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.branch-list {
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: var(--code);
+  font-size: 12px;
+}
+
+.branch-list .menu-item:hover {
+  background: none;
+  color: inherit;
+}
+
+.branch-list .menu-item.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.branch-list .menu-item.active .menu-icon {
+  color: inherit;
+}
+
+.branch-list .menu-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
