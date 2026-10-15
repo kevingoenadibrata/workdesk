@@ -6,6 +6,7 @@ mod git;
 mod glow;
 mod onboarding;
 mod pty;
+mod servers;
 mod usage;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -95,6 +96,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(pty::PtyState::default())
         .manage(agents::AgentState::default())
+        .manage(servers::ServerState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
             Ok(())
@@ -142,6 +144,7 @@ pub fn run() {
             git::git_status,
             git::git_branches,
             git::git_checkout,
+            servers::local_servers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

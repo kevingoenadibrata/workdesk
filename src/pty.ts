@@ -85,3 +85,21 @@ export function gitBranches(dir: string): Promise<string[]> {
 export function gitCheckout(dir: string, branch: string, create = false): Promise<void> {
   return invoke("git_checkout", { dir, branch, create });
 }
+
+/** A process serving HTTP on a local port. */
+export interface Listener {
+  port: number;
+  pid: number;
+  /** What it is, e.g. "vite" rather than "node". */
+  name: string;
+  /** The PTY whose shell started it, or null if none did (Docker, or a server started elsewhere). */
+  pty: number | null;
+}
+
+/**
+ * Every local port that answers HTTP, and which of the PTYs `ids` started it.
+ * Apps' own helpers only count when a pane started them or printed one of `ports`.
+ */
+export function localServers(ids: number[], ports: number[]): Promise<Listener[]> {
+  return invoke("local_servers", { ids, ports });
+}

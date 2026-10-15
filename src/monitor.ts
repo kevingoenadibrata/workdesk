@@ -352,6 +352,18 @@ function fillCard(card: HTMLElement, agent: Agent, now: number) {
 
 // ---- polling, and the sidebar row ----
 
+/** Every pane in sidebar order, then left to right and top to bottom, with its tab's title and color. */
+export function panesInOrder(ws: Workspace): { session: TermSession; tabTitle: string; color: string }[] {
+  return ws.orderedTabIds().flatMap((id) => {
+    const tab = ws.tabs.get(id)!;
+    const tabTitle = ws.title(tab);
+    // As the sidebar colors it: its group's, else its own, else the accent.
+    const c = ws.groupOf(id)?.color ?? tab.color;
+    const color = c ? GROUP_COLORS[c] : "var(--accent)";
+    return tab.sessions.map((session) => ({ session, tabTitle, color }));
+  });
+}
+
 /**
  * Watches every pane for coding agents. While any are running, a Monitor row
  * sits at the top of the sidebar, badged when one needs you.
@@ -378,16 +390,8 @@ export class AgentMonitor {
     setInterval(() => void this.poll(), intervalMs);
   }
 
-  /** Panes in sidebar order, then left to right and top to bottom. */
-  private panes(): { session: TermSession; tabTitle: string; color: string }[] {
-    return this.ws.orderedTabIds().flatMap((id) => {
-      const tab = this.ws.tabs.get(id)!;
-      const tabTitle = this.ws.title(tab);
-      // As the sidebar colors it: its group's, else its own, else the accent.
-      const c = this.ws.groupOf(id)?.color ?? tab.color;
-      const color = c ? GROUP_COLORS[c] : "var(--accent)";
-      return tab.sessions.map((session) => ({ session, tabTitle, color }));
-    });
+  private panes() {
+    return panesInOrder(this.ws);
   }
 
   private async poll() {

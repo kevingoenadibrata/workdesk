@@ -8,6 +8,7 @@ import { DirPicker } from "./dirpicker";
 import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor, MonitorPage } from "./monitor";
+import { LocalServers, ServersPage } from "./servers";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
@@ -48,6 +49,15 @@ const monitorPage = new MonitorPage($("#terminals"), (session) => {
   Page.closeAll();
 });
 const monitor = new AgentMonitor(ws, $("#monitor-slot"), monitorPage);
+const serversPage = new ServersPage(
+  $("#terminals"),
+  (session) => {
+    ws.reveal(session);
+    Page.closeAll();
+  },
+  (key) => servers.dismiss(key),
+);
+const servers = new LocalServers(ws, $("#servers-slot"), serversPage);
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
 const layoutPicker = new LayoutPicker($("#terminals"), ws);
@@ -221,7 +231,7 @@ function showSideTip(e: MouseEvent) {
   sideTip.style.top = `${r.top + r.height / 2}px`;
   sideTip.classList.add("visible");
 }
-for (const sel of ["#tablist", "#monitor-slot"]) {
+for (const sel of ["#tablist", "#monitor-slot", "#servers-slot"]) {
   $(sel).addEventListener("mouseover", showSideTip);
   $(sel).addEventListener("mouseleave", hideSideTip);
 }
@@ -315,6 +325,7 @@ const handlers: Record<Action, () => void> = {
   openSettings: () => settings.toggle(),
   openShortcuts: () => shortcutsPage.toggle(),
   openMonitor: () => monitorPage.toggle(),
+  openServers: () => serversPage.toggle(),
   searchTabs,
   closeTab: close,
   splitRight: () => void split("right"),
@@ -357,6 +368,7 @@ const PAGE_SAFE = new Set<Action>([
   "openSettings",
   "openShortcuts",
   "openMonitor",
+  "openServers",
   "toggleSidebar",
   "collapseSidebar",
   "newTabIn",
@@ -451,6 +463,7 @@ applyAppIcon();
 ws.startTitlePolling();
 ws.startGitPolling();
 monitor.start();
+servers.start();
 
 // The tour runs in its own window over the whole display (Workdesk › Restart
 // Onboarding opens it too). A theme picked there repaints this window, and

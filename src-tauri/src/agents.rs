@@ -694,7 +694,7 @@ fn opencode_v1(db: &Path, cwd: &str, since: u64) -> AgentInfo {
 // ---- process inspection ----
 
 #[cfg(target_os = "macos")]
-mod proc {
+pub(crate) mod proc {
     use std::ffi::CStr;
 
     pub fn exe_path(pid: libc::pid_t) -> Option<String> {
@@ -791,7 +791,7 @@ mod proc {
 }
 
 #[cfg(not(target_os = "macos"))]
-mod proc {
+pub(crate) mod proc {
     pub fn exe_path(pid: libc::pid_t) -> Option<String> {
         std::fs::read_link(format!("/proc/{pid}/exe")).ok().map(|p| p.to_string_lossy().into_owned())
     }
