@@ -60,7 +60,7 @@ export class TermSession {
   private find?: { bar: HTMLDivElement; input: HTMLInputElement; count: HTMLSpanElement; caseButton: HTMLButtonElement };
   private caseSensitive = false;
   private maximizeButton: HTMLButtonElement;
-  /** Floating cards over the terminal showing the git repo it's in; hidden outside one. */
+  /** Row of cards under the terminal showing the git repo it's in; hidden outside one. */
   private statusBar: HTMLDivElement;
   private gitKey = "";
   private gitError?: { el: HTMLElement; timer: number };
@@ -202,6 +202,7 @@ export class TermSession {
   setGit(info: GitInfo | null) {
     const key = info ? [info.repo, info.branch, info.added, info.removed, info.ahead, info.behind].join("\0") : "";
     if (key === this.gitKey) return;
+    const wasHidden = this.statusBar.hidden;
     this.gitKey = key;
     this.statusBar.hidden = !info;
     if (info) {
@@ -233,7 +234,9 @@ export class TermSession {
       branch.addEventListener("click", () => void this.openBranchMenu(branch, info.branch));
       this.statusBar.replaceChildren(item(FolderGit2, info.repo, "pane-status-repo"), branch, changes);
       if (this.gitError) this.statusBar.prepend(this.gitError.el);
-    }  }
+    }
+    // Showing or hiding the cards changes the terminal's height.
+    if (wasHidden !== this.statusBar.hidden) this.fit();  }
 
   private get dir(): string {
     return this.cwd || this.startCwd;
