@@ -3,10 +3,16 @@
 # message becomes the release notes. The release carries a signed update and a
 # latest.json manifest (with the same notes), which the in-app updater
 # (src/updater.ts) checks.
+#
+# Pushes to main run the same build without bundling or publishing, only to
+# keep the Rust cache warm: a tag build can restore caches saved on main, but
+# not ones saved by an earlier tag, so without this every release would
+# compile all dependencies from scratch.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -15,6 +21,9 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
+    # A release pushes its version-bump commit to main alongside the tag; the
+    # tag build covers that commit, so don't warm the cache for it too.
+    if: github.ref_type == 'tag' || !startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - uses: actions/checkout@v4
 
@@ -28,32 +37,70 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: npm ci
+
+      # Same cargo invocation as the tag build below, so the cache matches.
+      - name: Warm the Rust cache
+        if: github.ref_type == 'branch'
+        run: npm run tauri build -- --no-bundle
 
       # The checkout may hold the tag only as a lightweight ref; fetch the
       # annotated tag itself so its message can be read.
       - name: Read release notes from the tag
+        if: github.ref_type == 'tag'
         id: notes
         run: |
           git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
-          notes="$(git tag -l --format='%(contents)' "$TAG")"
-          if [ -z "$notes" ]; then
+          git tag -l --format='%(contents)' "$TAG" > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
             echo "::error::$TAG has no message. Tag releases with: git tag -a $TAG -F notes.md"
             exit 1
           fi
-          { echo "body<<__NOTES__"; echo "$notes"; echo "__NOTES__"; } >> "$GITHUB_OUTPUT"
+          { echo "body<<__NOTES__"; cat "$RUNNER_TEMP/notes.md"; echo "__NOTES__"; } >> "$GITHUB_OUTPUT"
         env:
           TAG: ${{ github.ref_name }}
 
+      # Create the release ourselves, as a draft so the updater can't see it
+      # before its files are uploaded. tauri-action would create it with
+      # target_commitish set, which GitHub refuses (403 "Resource not accessible
+      # by integration") whenever the tagged commit's workflow files differ from
+      # main's, since the Actions token can't touch workflows. A re-run reuses
+      # the draft a failed run left behind.
+      - name: Create draft release
+        if: github.ref_type == 'tag'
+        id: release
+        run: |
+          id=$(gh api "repos/$R/releases" --paginate --jq ".[] | select(.draft and .tag_name == \"$TAG\") | .id" | head -1)
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/$R/releases" -f tag_name="$TAG" -f name="Workdesk $TAG" -F body=@"$RUNNER_TEMP/notes.md" -F draft=true --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+
       - uses: tauri-apps/tauri-action@v0
+        if: github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          releaseId: ${{ steps.release.outputs.id }}
           tagName: ${{ github.ref_name }}
-          releaseName: Workdesk ${{ github.ref_name }}
+          # Also the notes in latest.json, which the in-app updater reads.
           releaseBody: ${{ steps.notes.outputs.body }}
-          releaseDraft: false
-          prerelease: false
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        run: |
+          gh api -X PATCH "repos/$R/releases/$ID" -f name="Workdesk $TAG" -F body=@"$RUNNER_TEMP/notes.md" -F draft=false -f make_latest=true --jq .html_url
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          R: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          ID: ${{ steps.release.outputs.id }}
