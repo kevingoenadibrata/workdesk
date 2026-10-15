@@ -59,3 +59,29 @@ export function processCwds(ids: number[]): Promise<Record<string, string>> {
 export function busyProcesses(ids: number[]): Promise<Record<string, string>> {
   return invoke("pty_busy", { ids });
 }
+
+/** The git repo a directory is in, as shown in a pane's status bar. */
+export interface GitInfo {
+  repo: string;
+  branch: string;
+  added: number;
+  removed: number;
+  /** Commits ahead of and behind the upstream branch. */
+  ahead: number;
+  behind: number;
+}
+
+/** Git status for each of `dirs` that's inside a repo, keyed by directory. */
+export function gitStatus(dirs: string[]): Promise<Record<string, GitInfo>> {
+  return invoke("git_status", { dirs });
+}
+
+/** Local branches of the repo `dir` is in, most recently committed first. */
+export function gitBranches(dir: string): Promise<string[]> {
+  return invoke("git_branches", { dir });
+}
+
+/** Checks out `branch` in the repo `dir` is in (creating it if `create`); rejects with git's message. */
+export function gitCheckout(dir: string, branch: string, create = false): Promise<void> {
+  return invoke("git_checkout", { dir, branch, create });
+}

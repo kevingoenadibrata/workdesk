@@ -449,6 +449,7 @@ if (!saved || !ws.restore(saved)) ws.newTab();
 keepSessionSaved(ws);
 applyAppIcon();
 ws.startTitlePolling();
+ws.startGitPolling();
 monitor.start();
 
 // The tour runs in its own window over the whole display (Workdesk › Restart

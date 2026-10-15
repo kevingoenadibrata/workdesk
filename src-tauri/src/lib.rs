@@ -2,6 +2,7 @@ mod agents;
 mod appicon;
 mod dirs;
 mod files;
+mod git;
 mod glow;
 mod onboarding;
 mod pty;
@@ -138,6 +139,9 @@ pub fn run() {
             files::resolve_files,
             files::open_in_editor,
             files::save_drop,
+            git::git_status,
+            git::git_branches,
+            git::git_checkout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
