@@ -37,37 +37,56 @@ Then set `"version"` in `src-tauri/tauri.conf.json` and `version` under `[packag
 
 `git diff --stat` should show exactly those five files.
 
-### 4. Commit, tag, push
+### 4. Write the release notes
+
+The notes go in the annotated tag's message; the workflow publishes them as the GitHub Release body and as the `notes` field of `latest.json` (what the in-app updater sees). They're fixed once the tag is pushed, so get them right first.
+
+Read what changed since the previous tag: `git log <last tag>..HEAD` (full messages, not just subjects) and merged PRs (`gh pr list --state merged --base main --search "merged:>=<last tag date>" --json number,title,body`). Look at the diff where a message is vague. Then write Markdown for someone using Workdesk, not someone reading the code:
+
+```markdown
+## What's new
+- **Auto-updates.** Workdesk checks for new versions on launch and every few hours, and from Workdesk → Check for Updates…
+
+## Fixes
+- Closing the last pane of a split no longer …
+
+## Under the hood
+- …
+```
+
+- Lead with what the user can now do or will notice; name menu items and shortcuts as they appear in the app.
+- One line per change, bold lead-in, no commit hashes, no file paths unless the user would touch them.
+- Leave out sections with nothing in them. Fold version bumps, skill/workflow tweaks and refactors into "Under the hood", or drop them if they don't matter to a user.
+- Link PRs as `(#12)` at the end of a line when there is one.
+
+Show the draft to the user and ask with AskUserQuestion: "Looks good" or "Edit" (they say what to change). Don't tag until they approve. Save the approved notes to a file outside the repo (e.g. in the scratchpad directory).
+
+### 5. Commit, tag, push
 
 ```bash
 git commit -am "Release v<new>"
-git tag v<new>
+git tag -a v<new> -F <notes file>
 git push origin main v<new>
 ```
 
-The version bump goes straight to `main` (it's only a version change); end the commit message with the attribution lines from the system reminder, if any. If the push is rejected, stop and report; don't force.
+The tag must be annotated (`-a`): the workflow fails on a tag with no message. The version bump goes straight to `main` (it's only a version change); end the commit message with the attribution lines from the system reminder, if any. If the push is rejected, stop and report; don't force.
 
-### 5. Watch the build
+### 6. Watch the build
 
 Find the run (`gh run list --workflow release.yml --limit 1 --json databaseId,headBranch,status`) and run `gh run watch <id> --exit-status` in the background. It takes about 5–10 minutes. Don't poll; wait for it to finish.
 
 If it fails, show the failing step's log lines (`gh run view <id> --log-failed | tail -50`). The tag is already pushed, so after a fix the usual move is a new patch release, not reusing the tag; ask the user before deleting or moving any tag.
 
-### 6. Release notes and check
-
-Once it passes, replace the placeholder release body with real notes: a short bulleted list of what changed since the previous tag, written for the user (features and fixes, not commit hashes).
+### 7. Check
 
 ```bash
-gh release edit v<new> --notes "<notes>"
-```
-
-Then confirm the updater can see it:
-
-```bash
+gh release view v<new>
 curl -sL https://github.com/kevingoenadibrata/workdesk/releases/latest/download/latest.json
 ```
 
-It should show `"version": "<new>"` and a `darwin-aarch64` platform entry. Report the release URL and tell the user their Workdesk will offer the update on its next check (or right away via Workdesk → Check for Updates…).
+The release should show the notes, and `latest.json` should show `"version": "<new>"`, the same notes, and a `darwin-aarch64` platform entry. If a typo needs fixing after the fact, `gh release edit v<new> --notes-file <file>` fixes the page, but `latest.json` keeps the tag's version unless it's re-uploaded too.
+
+Report the release URL and tell the user their Workdesk will offer the update on its next check (or right away via Workdesk → Check for Updates…).
 
 ## Signing key
 
