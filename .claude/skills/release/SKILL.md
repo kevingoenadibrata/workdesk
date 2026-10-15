@@ -65,11 +65,11 @@ Show the draft to the user and ask with AskUserQuestion: "Looks good" or "Edit" 
 
 ```bash
 git commit -am "Release v<new>"
-git tag -a v<new> -F <notes file>
+git tag -a v<new> --cleanup=verbatim -F <notes file>
 git push origin main v<new>
 ```
 
-The tag must be annotated (`-a`): the workflow fails on a tag with no message. The version bump goes straight to `main` (it's only a version change); end the commit message with the attribution lines from the system reminder, if any. If the push is rejected, stop and report; don't force.
+The tag must be annotated (`-a`): the workflow fails on a tag with no message. `--cleanup=verbatim` matters: by default git strips lines starting with `#` as comments, which deletes the Markdown headings. The version bump goes straight to `main` (it's only a version change); end the commit message with the attribution lines from the system reminder, if any. If the push is rejected, stop and report; don't force.
 
 ### 6. Watch the build
 
