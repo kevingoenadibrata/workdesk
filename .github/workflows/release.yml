@@ -3,10 +3,16 @@
 # message becomes the release notes. The release carries a signed update and a
 # latest.json manifest (with the same notes), which the in-app updater
 # (src/updater.ts) checks.
+#
+# Pushes to main run the same build without bundling or publishing, only to
+# keep the Rust cache warm: a tag build can restore caches saved on main, but
+# not ones saved by an earlier tag, so without this every release would
+# compile all dependencies from scratch.
 name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -15,6 +21,9 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
+    # A release pushes its version-bump commit to main alongside the tag; the
+    # tag build covers that commit, so don't warm the cache for it too.
+    if: github.ref_type == 'tag' || !startsWith(github.event.head_commit.message, 'Release v')
     steps:
       - uses: actions/checkout@v4
 
@@ -28,12 +37,20 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          shared-key: release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - run: npm ci
+
+      # Same cargo invocation as the tag build below, so the cache matches.
+      - name: Warm the Rust cache
+        if: github.ref_type == 'branch'
+        run: npm run tauri build -- --no-bundle
 
       # The checkout may hold the tag only as a lightweight ref; fetch the
       # annotated tag itself so its message can be read.
       - name: Read release notes from the tag
+        if: github.ref_type == 'tag'
         id: notes
         run: |
           git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
@@ -47,6 +64,7 @@ jobs:
           TAG: ${{ github.ref_name }}
 
       - uses: tauri-apps/tauri-action@v0
+        if: github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
