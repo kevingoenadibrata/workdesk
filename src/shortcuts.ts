@@ -41,6 +41,7 @@ export type Action =
   | "zoomOut"
   | "resetZoom"
   | "maximizePane"
+  | "arrangePanes"
   | `goToTab${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /**
@@ -60,6 +61,7 @@ export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+shift+d": "splitDown",
   "mod+shift+u": "unsplit",
   "mod+shift+enter": "maximizePane",
+  "mod+l": "arrangePanes",
   "mod+alt+arrowleft": "focusPaneLeft",
   "mod+alt+arrowright": "focusPaneRight",
   "mod+alt+arrowup": "focusPaneUp",
@@ -107,6 +109,7 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
       ["splitDown", "Split down"],
       ["unsplit", "Unsplit into tabs"],
       ["maximizePane", "Maximize or restore pane"],
+      ["arrangePanes", "Change layout and rearrange panes"],
       ["nextPane", "Next pane"],
       ["prevPane", "Previous pane"],
       ["focusPaneLeft", "Focus pane to the left"],

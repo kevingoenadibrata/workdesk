@@ -21,6 +21,21 @@ const MIN_PANE_HEIGHT = 80;
 export type Direction = "left" | "right" | "up" | "down";
 
 /**
+ * Where a dragged pane lands: an edge of a pane (splitting its column, or the
+ * pane itself, in half), a gap between columns or between the panes of a
+ * column (taking an even share), or a pane's place (swapping with it).
+ * Indices are into the grid as it is before the drop.
+ */
+export type DropTarget =
+  | { kind: "edge"; target: TermSession; side: Direction }
+  | { kind: "col"; index: number }
+  | { kind: "row"; col: number; index: number }
+  | { kind: "swap"; target: TermSession };
+
+/** A tab's grid as it would be after a drop: each column's width weight and its panes' height weights. */
+export type DropPlan = { w: number; rows: { s: TermSession; w: number }[] }[];
+
+/**
  * A sidebar tab: a grid of split panes, laid out as up to three columns of up
  * to two rows each.
  */
@@ -245,8 +260,15 @@ export class Workspace {
     termHost.addEventListener("panes-resized", () => this.emit());
   }
 
-  onChange(fn: () => void) {
+  /** Calls `fn` on every change; returns a function that stops it. */
+  onChange(fn: () => void): () => void {
     this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** A tab's panes were rearranged from outside (the layout picker), so save and redraw. */
+  layoutChanged(tab: Tab) {
+    if (this.tabs.get(tab.id) === tab) this.emit();
   }
 
   private emit() {
@@ -371,72 +393,118 @@ export class Workspace {
     void session.start(cwd);
   }
 
-  /**
-   * Where a dragged tab may be dropped next to `target` in the active tab:
-   * the side asked for, else the nearest side on the other axis, else none.
-   */
-  dropSide(sourceId: number, target: TermSession, preferred: Direction, fallback: Direction): Direction | null {
+  /** The pane being dragged onto the active tab's panes: a pane header, or a single-pane tab from the sidebar. */
+  dropSource(tabIds: readonly number[] | null): TermSession | null {
     const tab = this.activeTab;
-    const source = this.tabs.get(sourceId);
+    if (!tab) return null;
+    if (this.paneDrag) return tab.sessions.includes(this.paneDrag) ? this.paneDrag : null;
+    const source = tabIds?.length === 1 ? this.tabs.get(tabIds[0]) : undefined;
     // Only single-pane tabs can be dropped into another tab.
-    if (!tab || !source || source === tab || source.sessions.length !== 1) return null;
-    const { col } = tab.find(target);
-    if (col < 0) return null;
-    const fits = (d: Direction) =>
-      d === "left" || d === "right" ? tab.columns.length < MAX_COLUMNS : tab.columns[col].length < MAX_ROWS;
-    return fits(preferred) ? preferred : fits(fallback) ? fallback : null;
-  }
-
-  /** Moves a single-pane tab into the active tab, next to `target`. */
-  splitWithTab(sourceId: number, target: TermSession, side: Direction) {
-    const tab = this.activeTab;
-    const source = this.tabs.get(sourceId);
-    if (!tab || !source || this.dropSide(sourceId, target, side, side) !== side) return;
-    const session = source.focused;
-
-    // Retire the source tab without killing its shell.
-    const loc = this.locate(sourceId);
-    this.listFor(loc.groupId).splice(loc.index, 1);
-    this.tabs.delete(sourceId);
-    this.selection.delete(sourceId);
-    if (this.anchorId === sourceId) this.anchorId = null;
-    source.el.remove();
-    this.pruneGroups();
-
-    session.hooks = this.paneHooks(tab, session);
-    this.insertPane(tab, session, target, side);
-    tab.focused = session;
-    tab.layout();
-    session.focus();
-    this.emit();
+    return source && source !== tab && source.sessions.length === 1 ? source.focused : null;
   }
 
   /**
-   * Where a pane of the active tab may be moved next to `target`, judged as if
-   * it had already left its spot: the side asked for, else the fallback, else none.
+   * The active tab's grid after dropping `source` on `target`, or null if it
+   * wouldn't fit or wouldn't change anything. The drop preview draws this,
+   * and the drop applies it, so the two always agree.
    */
-  paneDropSide(session: TermSession, target: TermSession, preferred: Direction, fallback: Direction): Direction | null {
+  planDrop(source: TermSession, target: DropTarget): DropPlan | null {
     const tab = this.activeTab;
-    if (!tab || session === target || !tab.sessions.includes(session)) return null;
-    const columns = this.withoutPane(tab, session);
-    const col = columns.findIndex((c) => c.includes(target));
-    if (col < 0) return null;
-    const fits = (d: Direction) =>
-      d === "left" || d === "right" ? columns.length < MAX_COLUMNS : columns[col].length < MAX_ROWS;
-    return fits(preferred) ? preferred : fits(fallback) ? fallback : null;
+    if (!tab) return null;
+    if ((target.kind === "edge" || target.kind === "swap") && target.target === source) return null;
+    const plan: DropPlan = tab.columns.map((c) => ({ w: c[0].colWeight, rows: c.map((s) => ({ s, w: s.rowWeight })) }));
+    const at = (s: TermSession) => {
+      const col = plan.findIndex((c) => c.rows.some((r) => r.s === s));
+      return { col, row: col < 0 ? -1 : plan[col].rows.findIndex((r) => r.s === s) };
+    };
+
+    if (target.kind === "swap") {
+      const a = at(source);
+      const b = at(target.target);
+      if (a.col < 0 || b.col < 0) return null;
+      // The panes trade places; the slots keep their sizes.
+      plan[a.col].rows[a.row].s = target.target;
+      plan[b.col].rows[b.row].s = source;
+      return plan;
+    }
+
+    // Put the source in its new spot first, then take it out of its old one,
+    // so targets keep meaning what they meant on screen. A NaN weight is
+    // filled in last with an even share.
+    const placed = { s: source, w: NaN };
+    if (target.kind === "edge") {
+      const { col, row } = at(target.target);
+      if (col < 0) return null;
+      if (target.side === "left" || target.side === "right") {
+        // Splits the target's column in half.
+        plan[col].w /= 2;
+        placed.w = 1;
+        plan.splice(target.side === "left" ? col : col + 1, 0, { w: plan[col].w, rows: [placed] });
+      } else {
+        // Splits the target pane in half.
+        placed.w = plan[col].rows[row].w /= 2;
+        plan[col].rows.splice(target.side === "up" ? row : row + 1, 0, placed);
+      }
+    } else if (target.kind === "col") {
+      placed.w = 1;
+      plan.splice(target.index, 0, { w: NaN, rows: [placed] });
+    } else {
+      if (!plan[target.col]) return null;
+      plan[target.col].rows.splice(target.index, 0, placed);
+    }
+
+    const result = plan
+      .map((c) => ({ ...c, rows: c.rows.filter((r) => r.s !== source || r === placed) }))
+      .filter((c) => c.rows.length > 0);
+    const even = (ws: number[]) => (ws.length ? ws.reduce((a, b) => a + b, 0) / ws.length : 1);
+    for (const c of result) {
+      if (Number.isNaN(c.w)) c.w = even(result.filter((o) => !Number.isNaN(o.w)).map((o) => o.w));
+      if (Number.isNaN(placed.w) && c.rows.includes(placed)) placed.w = even(c.rows.filter((r) => r !== placed).map((r) => r.w));
+    }
+
+    if (result.length > MAX_COLUMNS || result.some((c) => c.rows.length > MAX_ROWS)) return null;
+    // A pane dropped back where it already is changes nothing.
+    const same =
+      result.length === tab.columns.length &&
+      result.every((c, i) => c.rows.length === tab.columns[i].length && c.rows.every((r, j) => r.s === tab.columns[i][j]));
+    return same ? null : result;
   }
 
-  /** Moves a pane of the active tab to the `side` of another of its panes. */
-  movePane(session: TermSession, target: TermSession, side: Direction) {
+  /** Drops a pane of the active tab, or a single-pane tab from the sidebar, as planned for `target`. */
+  drop(source: TermSession, target: DropTarget) {
     const tab = this.activeTab;
     // The header may be gone from the page before its dragend fires.
     this.paneDrag = null;
-    if (!tab || this.paneDropSide(session, target, side, side) !== side) return;
-    tab.columns = this.withoutPane(tab, session);
-    this.insertPane(tab, session, target, side);
-    tab.focused = session;
+    const plan = tab && this.planDrop(source, target);
+    if (!tab || !plan) return;
+
+    if (!tab.sessions.includes(source)) {
+      // Retire the source tab without killing its shell.
+      const sourceTab = [...this.tabs.values()].find((t) => t.sessions.includes(source));
+      if (!sourceTab) return;
+      const loc = this.locate(sourceTab.id);
+      this.listFor(loc.groupId).splice(loc.index, 1);
+      this.tabs.delete(sourceTab.id);
+      this.selection.delete(sourceTab.id);
+      if (this.anchorId === sourceTab.id) this.anchorId = null;
+      sourceTab.el.remove();
+      this.pruneGroups();
+      source.hooks = this.paneHooks(tab, source);
+    }
+
+    // Weights average 1, as a lone flex item with grow under 1 wouldn't fill its space.
+    const colTotal = plan.reduce((n, c) => n + c.w, 0);
+    tab.columns = plan.map((c) => {
+      const rowTotal = c.rows.reduce((n, r) => n + r.w, 0);
+      return c.rows.map((r) => {
+        r.s.colWeight = (c.w * plan.length) / colTotal;
+        r.s.rowWeight = (r.w * c.rows.length) / rowTotal;
+        return r.s;
+      });
+    });
+    tab.focused = source;
     tab.layout();
-    session.focus();
+    source.focus();
     this.emit();
   }
 
@@ -457,11 +525,6 @@ export class Workspace {
       session.rowWeight = target.rowWeight /= 2;
       tab.columns[col].splice(side === "up" ? row : row + 1, 0, session);
     }
-  }
-
-  /** The tab's columns with `session` taken out (and its column, if that empties it). */
-  private withoutPane(tab: Tab, session: TermSession): TermSession[][] {
-    return tab.columns.map((c) => c.filter((s) => s !== session)).filter((c) => c.length > 0);
   }
 
   /** Moves a pane out of its split tab into a tab of its own at `at`, and switches to it. */
