@@ -35,6 +35,9 @@ export class Sidebar {
   /** Index into the visible matches of the one Enter would open. */
   private hit = 0;
 
+  /** Opens the layout picker for the active tab. */
+  onRelayout?: () => void;
+
   constructor(
     private root: HTMLElement,
     private ws: Workspace,
@@ -393,6 +396,14 @@ export class Sidebar {
             { label: "New Tab Below", action: () => this.ws.newTab({ groupId: loc.groupId, index: loc.index + 1 }) },
             ...(split
               ? [
+                  {
+                    label: "Relayout Split…",
+                    shortcut: "arrangePanes" as const,
+                    action: () => {
+                      this.ws.activate(id);
+                      this.onRelayout?.();
+                    },
+                  },
                   { label: "Unsplit into Tabs", shortcut: "unsplit" as const, action: () => this.ws.unsplit(id) },
                   { label: "Move Focused Pane to New Tab", action: () => this.ws.movePaneToNewTab(id) },
                 ]

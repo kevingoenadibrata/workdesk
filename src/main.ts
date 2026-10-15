@@ -12,6 +12,7 @@ import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
 import { installSplitDrop } from "./splitdrop";
+import { LayoutPicker } from "./layouts";
 import { installFileDrop } from "./filedrop";
 import { processCwds } from "./pty";
 import { THEMES, loadTheme, setTheme } from "./themes";
@@ -49,6 +50,11 @@ const monitorPage = new MonitorPage($("#terminals"), (session) => {
 const monitor = new AgentMonitor(ws, $("#monitor-slot"), monitorPage);
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
+const layoutPicker = new LayoutPicker($("#terminals"), ws);
+sidebar.onRelayout = () => {
+  Page.closeAll();
+  layoutPicker.open();
+};
 
 /** Working directory of the focused pane, or undefined (home) if there's none. */
 async function currentCwd(): Promise<string | undefined> {
@@ -335,6 +341,7 @@ const handlers: Record<Action, () => void> = {
   zoomOut: () => zoom(-1),
   resetZoom,
   maximizePane: () => ws.toggleMaximized(),
+  arrangePanes: () => layoutPicker.open(),
   goToTab1: () => ws.activateIndex(1),
   goToTab2: () => ws.activateIndex(2),
   goToTab3: () => ws.activateIndex(3),
