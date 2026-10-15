@@ -7,6 +7,7 @@ import { botSvg, type BotFace } from "./bot";
 import { harnessLogo } from "./harnessLogos";
 import { logLines } from "./monitorSettings";
 import type { TermSession } from "./terminal";
+import { UsagePanel, liveUsage, type UsageSource } from "./usage";
 
 const HARNESS_NAMES: Record<AgentInfo["harness"], string> = {
   claude: "Claude Code",
@@ -162,6 +163,7 @@ export class MonitorPage extends Page {
   constructor(
     host: HTMLElement,
     private onJump: (session: TermSession) => void,
+    private usage: UsageSource = liveUsage,
   ) {
     super(host);
   }
@@ -180,12 +182,17 @@ export class MonitorPage extends Page {
     this.scope = el("div", "monitor-scope");
     this.scope.setAttribute("aria-hidden", "true");
     this.scope.append(el("span", "monitor-sweep"));
-    head.append(text, this.scope);
+    head.append(this.scope, text);
 
+    const usage = new UsagePanel(this.usage);
     this.list = el("div", "agent-list");
     this.cards.clear();
     this.sections.clear();
-    body.append(this.list);
+    // Agents on the left, usage limits in a column on the right.
+    const layout = el("div", "monitor-layout");
+    layout.append(this.list, usage.root);
+    body.append(layout);
+    usage.start();
     this.render();
     return null;
   }
@@ -335,6 +342,7 @@ function fillCard(card: HTMLElement, agent: Agent, now: number) {
     }
   });
   log.dataset.faded = String(faded);
+  log.style.setProperty("--rows", String(logLines() + FADED_LINES));
   log.hidden = !shown.length;
   card.setAttribute(
     "aria-label",

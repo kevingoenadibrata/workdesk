@@ -2895,14 +2895,15 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
 
 /* ---- the page ---- */
 
+/* Fills a big screen. Its width, not the window's, sets the column count below. */
 .page-body.monitor-body {
-  max-width: 760px;
+  max-width: 1680px;
+  container-type: inline-size;
 }
 
 .monitor-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
   margin-bottom: 30px;
 }
@@ -3018,9 +3019,358 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
 }
 
 .agent-section-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 8px 16px;
+}
+
+/* ---- usage limits ---- */
+
+/* Three equal columns: agents fill the first two, usage the third. The gaps
+   match the cards', so every column is the same width. */
+.monitor-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 26px 16px;
+}
+
+.monitor-layout > .agent-list {
+  grid-column: span 2;
+}
+
+/* Stays in view while the agent list scrolls. */
+.usage {
+  position: sticky;
+  top: 0;
+}
+
+.usage-rows {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.usage-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--text) 2.5%, transparent);
+}
+
+/* No numbers: just the header line, stepped back. */
+.usage-row.empty {
+  padding-bottom: 12px;
+  background: transparent;
+}
+
+.usage-row-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 24px;
+}
+
+.usage-row-head .agent-harness {
+  width: 24px;
+  height: 24px;
+}
+
+.usage-name {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.usage-row.empty .usage-name {
+  color: var(--muted);
+}
+
+.usage-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.usage-status.live {
+  /* Room for the dot's glow, which overflow would clip. */
+  padding-left: 8px;
+  color: var(--st-idle);
+}
+
+.usage-status.live::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: usage-live 2.4s ease-in-out infinite;
+}
+
+@keyframes usage-live {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.usage-refresh {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.usage-refresh:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.usage-refresh:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.usage-refresh:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.usage-refresh.spinning {
+  opacity: 0.9;
+  color: var(--accent);
+}
+
+.usage-refresh.spinning svg {
+  animation: usage-spin 0.9s linear infinite reverse;
+}
+
+@keyframes usage-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.usage-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* The windows side by side, each an instrument readout. */
+.usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
+}
+
+.usage-tile {
+  --fill: var(--accent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px 11px;
+  border-radius: 8px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.usage-tile[data-level="ahead"] { --fill: var(--group-yellow); }
+.usage-tile[data-level="high"] { --fill: var(--danger); }
+.usage-tile[data-level="reset"] { --fill: var(--st-idle); }
+
+.usage-tile-label {
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.usage-num {
+  font-family: var(--display);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.usage-num small {
+  margin-left: 2px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.usage-tile[data-level="reset"] .usage-num {
+  font-size: 24px;
+  line-height: 1.15;
+  color: var(--fill);
+}
+
+.usage-tile[data-level="ahead"] .usage-num,
+.usage-tile[data-level="high"] .usage-num {
+  color: var(--fill);
+}
+
+/* 20 cells of 5% each; the last lit one glows. */
+.usage-cells {
+  display: grid;
+  grid-template-columns: repeat(20, 1fr);
+  gap: 2px;
+  height: 9px;
+}
+
+.usage-cells i {
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.usage-cells i.on {
+  background: color-mix(in srgb, var(--fill) 70%, transparent);
+}
+
+.usage-cells i.tip {
+  background: var(--fill);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--fill) 80%, transparent);
+}
+
+.usage-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 8px;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.usage-when strong {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.usage-tile[data-level="reset"] .usage-when strong {
+  color: var(--fill);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-status.live::before,
+  .usage-refresh.spinning svg {
+    animation: none;
+  }
+}
+
+/* Smaller: agents in one column, usage beside them. */
+@container (max-width: 1100px) {
+  .monitor-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitor-layout > .agent-list {
+    grid-column: auto;
+  }
+
+  .agent-section-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Really small: usage stacks above the agents. */
+@container (max-width: 720px) {
+  .monitor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .usage {
+    position: static;
+    order: -1;
+  }
+
+  /* Above the agents, usage keeps slim: each window on one line. */
+  .usage-row {
+    gap: 7px;
+    padding: 8px 10px 9px;
+  }
+
+  .usage-row.empty {
+    padding-bottom: 8px;
+  }
+
+  /* Side by side while each line fits, else one under the other. */
+  .usage-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 5px;
+  }
+
+  .usage-tile {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 9px;
+  }
+
+  .usage-tile-label {
+    flex: none;
+    min-width: 46px;
+    font-size: 9.5px;
+  }
+
+  .usage-num {
+    flex: none;
+    min-width: 40px;
+    font-size: 15px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+
+  .usage-num small {
+    font-size: 10px;
+  }
+
+  .usage-tile[data-level="reset"] .usage-num {
+    font-size: 13px;
+    line-height: 1;
+  }
+
+  .usage-cells {
+    flex: 1;
+    min-width: 40px;
+    height: 6px;
+  }
+
+  /* Just the countdown, so each window fits on one line. */
+  .usage-when {
+    flex: none;
+    justify-content: flex-end;
+    min-width: 72px;
+    font-size: 10.5px;
+  }
+
+  .usage-when span {
+    display: none;
+  }
 }
 
 /* ---- cards ---- */
@@ -3347,6 +3697,8 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
   -webkit-line-clamp: 2;
   overflow: hidden;
   margin-top: 6px !important;
+  /* Always two lines tall, so every card is the same height. */
+  height: calc(3em + 16px);
   padding: 7px 10px 7px 26px;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -3380,6 +3732,9 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
   flex-direction: column;
   margin: 6px 0 0 12px;
   padding: 2px 0 2px 12px;
+  /* Room for every line the setting shows plus the faded ones, even when fewer are on screen. */
+  height: calc(var(--rows, 5) * 1.5em + 4px);
+  overflow: hidden;
   border-left: 2px solid;
   /* The rail fades in over the faded lines (each 1.5em) at the top. */
   border-image: linear-gradient(to bottom, transparent, var(--border) var(--fade, 0em)) 1;
@@ -3397,8 +3752,9 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
   --fade: 3.1em;
 }
 
+/* Nothing on screen yet: keep the space, so the card doesn't shrink. */
 .agent-log[hidden] {
-  display: none;
+  visibility: hidden;
 }
 
 .agent-log-line {
