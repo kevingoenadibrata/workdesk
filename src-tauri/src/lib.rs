@@ -7,6 +7,7 @@ mod glow;
 mod onboarding;
 mod pty;
 mod servers;
+mod tickets;
 mod usage;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -146,6 +147,11 @@ pub fn run() {
             git::git_checkout,
             git::git_diff,
             servers::local_servers,
+            tickets::tickets_accounts,
+            tickets::tickets_whoami,
+            tickets::tickets_connect,
+            tickets::tickets_disconnect,
+            tickets::tickets_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

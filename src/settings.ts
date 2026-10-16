@@ -10,6 +10,7 @@ import {
   ChevronRight,
   FileCode,
   Folder,
+  Plug,
   Layers,
   Package,
   Palette,
@@ -21,6 +22,7 @@ import {
   Star,
   Trash2,
   Type,
+  Ticket as TicketIcon,
   icon,
 } from "./icons";
 import { APP_ICONS, appIconUrl, currentAppIcon, setAppIcon } from "./appIcon";
@@ -28,6 +30,9 @@ import { LoadoutEditor } from "./loadoutEditor";
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES, MIN_LOG_LINES, logLines, setLogLines } from "./monitorSettings";
 
 import { Page, el } from "./page";
+import { PROVIDERS, ticketStore, ticketsApi, type TokenSource } from "./tickets";
+import { providerLogo } from "./providerLogos";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { attachPathSuggest } from "./pathsuggest";
 import { EDITORS, currentEditor, currentFolderApp, installedEditors, setEditor, setFolderApp, type FolderApp } from "./filelinks";
 import {
@@ -61,12 +66,13 @@ function gutterPrompts(lines: number) {
   });
 }
 
-type SubPage = "teleport" | "loadouts" | "appearance" | "editor";
+type SubPage = "teleport" | "loadouts" | "appearance" | "editor" | "integrations";
 const SUBPAGES: { id: SubPage; label: string; icon: IconNode }[] = [
   { id: "teleport", label: "Teleport", icon: Shell },
   { id: "loadouts", label: "Loadouts", icon: Package },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "editor", label: "Editor", icon: FileCode },
+  { id: "integrations", label: "Integrations", icon: Plug },
 ];
 const SUBPAGE_KEY = "workdesk.settingsPage";
 
@@ -188,6 +194,7 @@ export class Settings extends Page {
       // The loadout editor draws a miniature of the app, so it gets the whole width.
       body.classList.toggle("wide", id === "loadouts");
       if (id === "editor") return this.buildEditor(content);
+      if (id === "integrations") return this.buildIntegrations(content);
       if (id === "loadouts") return this.buildLoadouts(content);
       return id === "appearance" ? this.buildAppearance(content) : this.buildTeleport(content);
     };
@@ -250,16 +257,38 @@ export class Settings extends Page {
   /** Opens Settings on its Loadouts sub page, with `name`'s name selected for renaming. */
   showLoadout(name?: string) {
     this.focusLoadout = name;
+    this.showSubPage("loadouts");
+  }
+
+  /** Opens Settings on sub page `id`. */
+  showSubPage(id: SubPage) {
     if (this.isOpen && this.showSub) {
-      this.showSub("loadouts")?.focus();
+      this.showSub(id)?.focus();
       return;
     }
     try {
-      localStorage.setItem(SUBPAGE_KEY, "loadouts");
+      localStorage.setItem(SUBPAGE_KEY, id);
     } catch {
       // Opens wherever it was left.
     }
     this.open();
+  }
+
+  /** A card per ticket service: connect it with a token, or disconnect it; returns the first token box to focus. */
+  private buildIntegrations(content: HTMLElement) {
+    const section = el("section", "page-section");
+    const intro = el("p", "page-intro");
+    intro.append("Connect a service to list the tickets assigned to you on the Tickets page (", kbdFor("openTickets"), "). Tokens are kept in your macOS Keychain.");
+    const cards = el("div", "integration-list");
+    section.append(sectionTitle("Ticket services", TicketIcon), intro, cards);
+    content.append(section);
+    let first: HTMLInputElement | null = null;
+    for (const p of PROVIDERS) {
+      const { card, input } = integrationCard(p);
+      first ??= input;
+      cards.append(card);
+    }
+    return first;
   }
 
   /** The loadout editor; returns the element to focus. */
@@ -730,4 +759,81 @@ export class Settings extends Page {
       card.classList.toggle("invalid", msg !== "");
     });
   }
+}
+
+/**
+ * One ticket service in Settings: whether it's connected and as whom, a box
+ * to paste a token into, and Disconnect.
+ */
+function integrationCard(p: (typeof PROVIDERS)[number]) {
+  const card = el("div", "integration");
+  const logo = el("span", "integration-logo");
+  logo.innerHTML = providerLogo(p.id, 20);
+  const name = el("div", "integration-name", p.name);
+  const status = el("div", "integration-status");
+  const head = el("div", "integration-head");
+  const text = el("div", "integration-text");
+  text.append(name, status);
+  const disconnect = el("button", "integration-disconnect", "Disconnect");
+  head.append(logo, text, disconnect);
+
+  const form = el("form", "integration-form");
+  const input = el("input", "integration-token");
+  input.type = "password";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.placeholder = `Paste a ${p.name} token`;
+  input.setAttribute("aria-label", `${p.name} token`);
+  const connect = el("button", "integration-connect", "Connect");
+  connect.type = "submit";
+  form.append(input, connect);
+  const help = el("p", "integration-help");
+  const link = el("a", "", "Create a token");
+  link.href = p.tokenUrl;
+  link.addEventListener("click", (e) => {
+    e.preventDefault();
+    void openUrl(p.tokenUrl);
+  });
+  help.append(p.tokenHelp, " ", link, ".");
+  const error = el("p", "integration-error");
+  card.append(head, form, help, error);
+
+  /** Shows `source`'s state, looking up whose account it is when connected. */
+  const show = (source: TokenSource, who?: string) => {
+    card.classList.toggle("connected", source != null);
+    disconnect.hidden = source !== "keychain";
+    error.textContent = "";
+    const label = (name?: string) =>
+      source === "gh" ? `Using your gh login${name ? ` (${name})` : ""}` : source ? `Connected${name ? ` as ${name}` : ""}` : "Not connected";
+    status.textContent = label(who);
+    // A gh login works without a token, but a pasted one takes over.
+    input.placeholder = source === "keychain" ? "Paste a new token to replace it" : `Paste a ${p.name} token`;
+    if (source && !who) void ticketsApi.whoami(p.id).then((n) => n && (status.textContent = label(n)), () => {});
+  };
+  void ticketsApi.accounts().then((all) => show(all.find((a) => a.provider === p.id)?.source ?? null), () => show(null));
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    connect.disabled = true;
+    connect.textContent = "Checking…";
+    ticketsApi.connect(p.id, input.value).then(
+      (who) => {
+        input.value = "";
+        show("keychain", who);
+        void ticketStore.refresh();
+      },
+      (err) => (error.textContent = String(err)),
+    ).finally(() => {
+      connect.disabled = false;
+      connect.textContent = "Connect";
+    });
+  });
+  disconnect.addEventListener("click", () => {
+    void ticketsApi.disconnect(p.id).then(async () => {
+      const all = await ticketsApi.accounts().catch(() => []);
+      show(all.find((a) => a.provider === p.id)?.source ?? null);
+      void ticketStore.refresh();
+    });
+  });
+  return { card, input };
 }

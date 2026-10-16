@@ -10,13 +10,14 @@ import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor, MonitorPage } from "./monitor";
 import { LocalServers, ServersPage } from "./servers";
 import { DiffSheet, registerDiffSheet } from "./diffview";
+import { TicketsPage, TicketsRow, ticketStore } from "./tickets";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
 import { installSplitDrop } from "./splitdrop";
 import { LayoutPicker } from "./layouts";
 import { installFileDrop } from "./filedrop";
-import { processCwds } from "./pty";
+import { gitBranches, gitCheckout, gitStatus, processCwds } from "./pty";
 import { THEMES, loadTheme, setTheme } from "./themes";
 import { resetZoom, zoom } from "./fonts";
 import { keepSessionSaved, loadSession } from "./session";
@@ -59,6 +60,38 @@ const serversPage = new ServersPage(
   (key) => servers.dismiss(key),
 );
 const servers = new LocalServers(ws, $("#servers-slot"), serversPage);
+const ticketsPage = new TicketsPage($("#terminals"), ticketStore, startTicketBranch, () => settings.showSubPage("integrations"));
+new TicketsRow(ticketStore, $("#tickets-slot"), ticketsPage);
+
+/**
+ * Asks which folder's repo to start `branch` in (Teleport, folders only),
+ * checks it out there (creating it if it's new) and opens a tab in that
+ * folder. Resolves with what happened, or "" if the picker was dismissed.
+ */
+function startTicketBranch(_ticket: unknown, branch: string): Promise<string> {
+  const title = document.createElement("span");
+  const name = document.createElement("code");
+  name.textContent = branch;
+  title.append("Start branch ", name, " in…");
+  return new Promise((resolve, reject) => {
+    void dirPicker.open(
+      (dir) => {
+        void (async () => {
+          const info = (await gitStatus([dir]).catch(() => null))?.[dir];
+          if (!info) throw `${dir} isn't in a git repo. Pick a folder inside the repo you want the branch in.`;
+          const exists = (await gitBranches(dir)).includes(branch);
+          await gitCheckout(dir, branch, !exists);
+          Page.closeAll();
+          ws.newTab(undefined, dir);
+          return `${exists ? "Switched to" : "Created"} ${branch} in ${info.repo}`;
+        })().then(resolve, (e) => reject(String(e)));
+      },
+      () => resolve(""),
+      undefined,
+      { title, placeholder: "Pick the repo's folder…  (~/ or / to browse)", plain: true },
+    );
+  });
+}
 const diffSheet = new DiffSheet();
 diffSheet.onClose = () => {
   if (!Page.current) focusTerminal();
@@ -237,7 +270,7 @@ function showSideTip(e: MouseEvent) {
   sideTip.style.top = `${r.top + r.height / 2}px`;
   sideTip.classList.add("visible");
 }
-for (const sel of ["#tablist", "#monitor-slot", "#servers-slot"]) {
+for (const sel of ["#tablist", "#monitor-slot", "#servers-slot", "#tickets-slot"]) {
   $(sel).addEventListener("mouseover", showSideTip);
   $(sel).addEventListener("mouseleave", hideSideTip);
 }
@@ -332,6 +365,7 @@ const handlers: Record<Action, () => void> = {
   openShortcuts: () => shortcutsPage.toggle(),
   openMonitor: () => monitorPage.toggle(),
   openServers: () => serversPage.toggle(),
+  openTickets: () => ticketsPage.toggle(),
   searchTabs,
   closeTab: close,
   splitRight: () => void split("right"),
@@ -375,6 +409,7 @@ const PAGE_SAFE = new Set<Action>([
   "openShortcuts",
   "openMonitor",
   "openServers",
+  "openTickets",
   "toggleSidebar",
   "collapseSidebar",
   "newTabIn",
@@ -471,6 +506,7 @@ ws.startTitlePolling();
 ws.startGitPolling();
 monitor.start();
 servers.start();
+ticketStore.start();
 
 // The tour runs in its own window over the whole display (Workdesk › Restart
 // Onboarding opens it too). A theme picked there repaints this window, and
