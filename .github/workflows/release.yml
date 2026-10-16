@@ -83,6 +83,29 @@ jobs:
           R: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
 
+      # Sign the app with Workdesk's self-signed certificate (the
+      # signingIdentity in tauri.conf.json). macOS ties Keychain access to the
+      # signature, so a stable certificate keeps "Always Allow" working across
+      # updates; an ad-hoc signature changes with every build. Tauri's own
+      # APPLE_CERTIFICATE import only accepts Apple-issued certificates, so
+      # import it into a throwaway keychain here instead.
+      - name: Import code signing certificate
+        if: github.ref_type == 'tag'
+        run: |
+          kc="$RUNNER_TEMP/codesign.keychain-db"
+          kcpw=$(openssl rand -hex 16)
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/codesign.p12"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -t 3600 -u "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          security import "$RUNNER_TEMP/codesign.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpw" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/codesign.p12"
+        env:
+          CERT: ${{ secrets.WORKDESK_CODESIGN_P12 }}
+          CERT_PASSWORD: ${{ secrets.WORKDESK_CODESIGN_PASSWORD }}
+
       - uses: tauri-apps/tauri-action@v0
         if: github.ref_type == 'tag'
         env:

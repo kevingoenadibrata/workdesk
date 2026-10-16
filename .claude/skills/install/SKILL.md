@@ -27,6 +27,8 @@ Run it from the repo root with a 10-minute timeout. It runs `npm run build` (tsc
 
 The signing key is needed because the build also produces a signed updater bundle (`createUpdaterArtifacts`); without it the build fails at the end. Never print the key or password. If `~/.tauri/workdesk-updater.key` is missing, stop and tell the user: that key is what installed apps use to verify updates, and it can't be regenerated without breaking them.
 
+The app is code-signed with the self-signed "Workdesk Code Signing" certificate (`bundle.macOS.signingIdentity` in `tauri.conf.json`), which lives in the login Keychain; the files are in `~/.tauri/workdesk-codesign.*` and CI has it as the `WORKDESK_CODESIGN_P12` / `WORKDESK_CODESIGN_PASSWORD` secrets. A stable signature is what keeps macOS's "Always Allow" on the Workdesk Integrations Keychain item working from one build to the next. If the build fails because the identity can't be found (`security find-identity -p codesigning` doesn't list it), re-import it with `security import ~/.tauri/workdesk-codesign.p12 -k ~/Library/Keychains/login.keychain-db -P "$(cat ~/.tauri/workdesk-codesign.password)" -T /usr/bin/codesign`. Never generate a new certificate: that changes the signature, and every installed copy asks for Keychain access again.
+
 The output is `src-tauri/target/release/bundle/macos/Workdesk.app`. If the build fails, show the relevant error lines (not the whole log), and don't install anything. A failure in the `bundle_dmg.sh` step after the `.app` was produced is OK to ignore: only the `.app` is installed. Say so in the report.
 
 ### 3. Install
