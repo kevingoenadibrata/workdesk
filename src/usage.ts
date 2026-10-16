@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { el } from "./page";
-import { RotateCcw, icon } from "./icons";
+import { ChevronLeft, ChevronRight, RotateCcw, icon } from "./icons";
 import { harnessLogo } from "./harnessLogos";
 
 /** One rolling limit window, e.g. the 5-hour one. */
@@ -81,11 +81,26 @@ export class UsagePanel {
   private lastFetch = 0;
   private timer: number | undefined;
   private shown = "";
+  /** With `cycle`, which harness is showing. */
+  private index = loadIndex();
 
-  constructor(private source: UsageSource = liveUsage) {
-    const heading = el("h2", "agent-section-title");
-    heading.append(el("span", "", "Usage limits"));
-    this.root.append(heading, el("div", "usage-rows"));
+  /**
+   * `cycle` shows one harness at a time, Claude first, with arrows to step
+   * through them (Home's card); otherwise every harness, under a heading.
+   */
+  constructor(
+    private source: UsageSource = liveUsage,
+    private cycle = false,
+  ) {
+    if (cycle) {
+      this.root.classList.add("cycle");
+      this.root.setAttribute("aria-label", "Usage limits");
+    } else {
+      const heading = el("h2", "agent-section-title");
+      heading.append(el("span", "", "Usage limits"));
+      this.root.append(heading);
+    }
+    this.root.append(el("div", "usage-rows"));
   }
 
   /** Keeps the numbers fresh and the countdowns ticking until the panel leaves the page. */
@@ -134,7 +149,8 @@ export class UsagePanel {
     const u = this.usage;
     if (!u) return;
     const now = Date.now();
-    const next = [this.claudeRow(u, now), this.row("codex", "Codex", u.codex, now)];
+    const all = [() => this.claudeRow(u, now), () => this.row("codex", "Codex", u.codex, now)];
+    const next = this.cycle ? [this.withArrows(all[this.index % all.length](), all.length)] : all.map((r) => r());
     // This runs every second, but the text only changes by the minute: swap
     // the rows only then, so a click on the button isn't lost mid-press.
     const html = next.map((r) => r.outerHTML).join("");
@@ -142,6 +158,27 @@ export class UsagePanel {
       this.shown = html;
       rows.replaceChildren(...next);
     }
+  }
+
+  /** Previous and next buttons in `row`'s head, stepping through the harnesses. */
+  private withArrows(row: HTMLElement, count: number): HTMLElement {
+    const step = (node: Parameters<typeof icon>[0], label: string, by: number) => {
+      const b = el("button", "usage-step");
+      b.type = "button";
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.append(icon(node, 14));
+      b.addEventListener("click", () => {
+        this.index = (this.index + by + count) % count;
+        saveIndex(this.index);
+        this.render();
+      });
+      return b;
+    };
+    const nav = el("span", "usage-nav");
+    nav.append(step(ChevronLeft, "Previous", -1), el("span", "usage-page", `${(this.index % count) + 1}/${count}`), step(ChevronRight, "Next", 1));
+    row.querySelector(".usage-row-head")!.append(nav);
+    return row;
   }
 
   private claudeRow(u: Usage, now: number): HTMLElement {
@@ -193,6 +230,53 @@ export class UsagePanel {
     row.append(tiles);
     return row;
   }
+}
+
+const INDEX_KEY = "workdesk.usageHarness";
+/** The harnesses the cycling card steps through, in order. */
+const CYCLE = ["claude", "codex"] as const;
+const harnessListeners = new Set<() => void>();
+
+/** The harness the cycling usage card is showing. */
+export function shownHarness(): (typeof CYCLE)[number] {
+  return CYCLE[loadIndex() % CYCLE.length];
+}
+
+/** Called when the cycling card steps to another harness. */
+export function onShownHarness(fn: () => void) {
+  harnessListeners.add(fn);
+}
+
+/**
+ * A window in brief, for the sidebar: "62%", how it's going (the usage
+ * card's levels), and when it resets, as a countdown and a clock time.
+ */
+export function windowSummary(
+  w: UsageWindow,
+  now = Date.now(),
+): { used: string; percent: number; level: "ok" | "ahead" | "high" | "reset"; resetsIn: string; resetsAt: string } {
+  const at = w.resetsAt * 1000;
+  const left = at - now;
+  if (left <= 0) return { used: "Fresh", percent: 0, level: "reset", resetsIn: "", resetsAt: "" };
+  const percent = Math.min(100, Math.max(0, w.usedPercent));
+  const elapsed = Math.min(1, Math.max(0, 1 - left / (w.minutes * MIN)));
+  const level = percent >= 90 ? "high" : percent > elapsed * 100 + 10 ? "ahead" : "ok";
+  return { used: `${Math.round(percent)}%`, percent, level, resetsIn: `in ${span(left)}`, resetsAt: clock(at, now) };
+}
+
+function loadIndex(): number {
+  try {
+    return Number(localStorage.getItem(INDEX_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveIndex(i: number) {
+  try {
+    localStorage.setItem(INDEX_KEY, String(i));
+  } catch {}
+  for (const fn of harnessListeners) fn();
 }
 
 const WINDOW_NAMES: Record<number, string> = { 300: "5-hour", 10080: "Weekly" };

@@ -1,0 +1,1405 @@
+/* ---- Home: tickets from backlog, to an agent, to a pull request ----
+
+   Every card is a ticket with a stub on its left, torn along a perforation.
+   The stub says who holds the ticket: nobody yet (the service's logo), an
+   agent (its bot), or a pull request (its number). */
+
+/* The page's own padding comes from .home, edge to edge. */
+.page-body.home-page {
+  max-width: none;
+  padding: 0;
+}
+
+.home {
+  --waiting: var(--group-yellow, #f2c66d);
+  --pr: var(--group-green, #6fd08c);
+  --merged: var(--group-purple, #b48cff);
+  --perf: color-mix(in srgb, var(--text) 16%, transparent);
+  --card: color-mix(in srgb, var(--raised) 55%, var(--bg));
+  container-type: inline-size;
+  max-width: 1480px;
+  margin: 0 auto;
+  /* The same space at the sides as at the top. */
+  padding: 28px 28px 64px;
+}
+
+/* ---- head ---- */
+
+.home-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 32px;
+  margin-bottom: 30px;
+}
+/* Read by screen readers only; the clock is the page's face. */
+.home-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.home-date {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.home-week {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+  font-family: var(--code);
+  font-size: 11.5px;
+  color: var(--faint);
+}
+/* Set in the terminal's face, big: a clock on a desk full of terminals. */
+.home-time {
+  display: flex;
+  align-items: baseline;
+  margin: 0;
+  font-family: var(--code);
+  font-weight: 600;
+  line-height: 0.9;
+  font-variant-numeric: tabular-nums;
+}
+.home-time-hm {
+  font-size: 104px;
+  letter-spacing: -0.03em;
+}
+.home-time-colon {
+  margin: 0 -0.14em;
+}
+.home-time-period {
+  margin-left: 14px;
+  text-transform: uppercase;
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.home-time-period:empty {
+  display: none;
+}
+@container (max-width: 520px) {
+  .home-time-hm {
+    font-size: 76px;
+  }
+}
+/* Usage limits: the Agent Monitor card, one harness at a time, laid out
+   wide and short so it sits level with the clock. */
+.home-limits {
+  position: static;
+  width: 100%;
+}
+.home-limits .usage-row {
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+}
+.home-limits .usage-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+/* Each window on one band: name and number on the left, meter and reset on the right. */
+.home-limits .usage-tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "label cells"
+    "num when";
+  align-items: center;
+  gap: 6px 16px;
+  padding: 9px 12px 10px;
+}
+.home-limits .usage-tile-label {
+  grid-area: label;
+}
+.home-limits .usage-num {
+  grid-area: num;
+  align-self: end;
+  min-width: 64px;
+  font-size: 26px;
+}
+.home-limits .usage-tile[data-level="reset"] .usage-num {
+  font-size: 20px;
+}
+.home-limits .usage-cells {
+  grid-area: cells;
+  height: 8px;
+}
+.home-limits .usage-when {
+  grid-area: when;
+  align-self: end;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.usage-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+.usage-step {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.usage-step:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.usage-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.usage-page {
+  min-width: 22px;
+  text-align: center;
+  font-family: var(--code);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+/* ---- lanes ---- */
+
+.home-lanes {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 4.6fr) minmax(0, 3.2fr);
+  gap: 28px;
+  align-items: start;
+}
+@container (max-width: 1080px) {
+  .home-lanes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+  .home-lane[data-lane="pulls"] {
+    grid-column: 1 / -1;
+  }
+}
+@container (max-width: 720px) {
+  .home-lanes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .home {
+    padding: 24px 16px 48px;
+  }
+}
+
+/* The lane's name and count, on a rule that points at the next lane. */
+.home-lane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  margin-bottom: 14px;
+  font-family: var(--code);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.home-lane-name {
+  color: var(--text);
+  font-weight: 500;
+}
+.home-lane-count {
+  color: var(--faint);
+}
+.home-lane-rule {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 16px;
+  color: var(--faint);
+}
+.home-lane-rule::before {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+  background: linear-gradient(to right, var(--border), color-mix(in srgb, var(--text) 18%, transparent));
+}
+.home-lane-rule svg {
+  margin-left: -3px;
+}
+.home-lane[data-lane="pulls"] .home-lane-rule::before {
+  background: var(--border);
+}
+
+.home-lane-body > * + * {
+  margin-top: 22px;
+}
+.home-group-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.home-group-label .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--group-color, var(--muted));
+}
+.home-list {
+  display: grid;
+  gap: 8px;
+}
+
+/* ---- the ticket card ---- */
+
+.home-card {
+  --cut: 44px;
+  --notch: 5px;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--cut) minmax(0, 1fr);
+  min-height: 52px;
+  border-radius: 9px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1px var(--border);
+  /* Notches top and bottom where the stub tears off. */
+  -webkit-mask:
+    radial-gradient(circle var(--notch) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+    radial-gradient(circle var(--notch) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+  mask:
+    radial-gradient(circle var(--notch) at var(--cut) 0, #0000 98%, #000) top / 100% 51% no-repeat,
+    radial-gradient(circle var(--notch) at var(--cut) 100%, #0000 98%, #000) bottom / 100% 51% no-repeat;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.12s ease;
+}
+.home-card:hover {
+  background: color-mix(in srgb, var(--raised) 85%, var(--bg));
+}
+.home-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The perforation. */
+.home-card::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--notch) + 4px);
+  bottom: calc(var(--notch) + 4px);
+  left: calc(var(--cut) - 0.5px);
+  border-left: 1px dashed var(--perf);
+}
+.home-stub {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  color: var(--faint);
+}
+.home-body {
+  min-width: 0;
+  padding: 10px 14px 10px 14px;
+}
+.home-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.home-id {
+  flex: none;
+  font-family: var(--code);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.home-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.home-when {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.home-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.home-pill {
+  --status: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 19px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--status) 12%, transparent);
+  color: color-mix(in srgb, var(--status) 55%, var(--text));
+  font-size: 11px;
+}
+.home-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status);
+}
+.home-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code);
+  font-size: 11px;
+}
+
+/* ---- backlog ---- */
+
+.home-tools {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.home-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--faint);
+}
+.home-search:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.home-search input:focus-visible {
+  outline: none;
+}
+.home-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+.home-tools {
+  position: relative;
+}
+.home-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+.home-filter:hover,
+.home-filter.open {
+  color: var(--text);
+  background: var(--hover);
+}
+.home-filter.active {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.home-filter-count {
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.home-reload {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+}
+.home-reload:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.home-reload.spinning {
+  color: var(--accent);
+}
+.home-reload.spinning svg {
+  animation: home-spin 0.9s linear infinite reverse;
+}
+@keyframes home-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-reload.spinning svg {
+    animation: none;
+  }
+}
+
+/* Active filters, each removable. */
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.home-chips[hidden] {
+  display: none;
+}
+.home-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px 0 9px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text);
+  font-size: 11.5px;
+}
+.home-chip svg {
+  color: var(--muted);
+}
+.home-chip:hover svg {
+  color: var(--text);
+}
+.home-chip-key {
+  color: var(--muted);
+}
+.home-chip-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.home-chip-clear {
+  height: 24px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.home-chip-clear:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+.home-chip-clear:disabled {
+  opacity: 0.4;
+}
+
+/* The filter menu, under the Filter button. */
+.home-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: min(460px, 100%);
+  min-width: 300px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--raised);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    0 12px 32px rgb(0 0 0 / calc(0.35 * var(--shadow-k)));
+}
+.home-menu-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+@container (max-width: 520px) {
+  .home-menu-cols {
+    grid-template-columns: 1fr;
+  }
+}
+.home-menu-section {
+  padding: 4px 0 6px;
+}
+.home-menu-title {
+  padding: 6px 8px 4px;
+  font-family: var(--code);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.home-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.home-option:hover,
+.home-option:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.home-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent);
+  color: transparent;
+}
+.home-check.round {
+  border-radius: 50%;
+}
+.home-option[aria-checked="true"] .home-check {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--on-accent);
+}
+.home-option-logo {
+  display: grid;
+  color: var(--muted);
+}
+.home-option-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.home-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-option-count {
+  margin-left: auto;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+}
+.home-menu-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+  padding: 8px 8px 4px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+/* Backlog titles wrap to two lines before they're cut. */
+.home-card.backlog .home-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.home-card.backlog .home-stub {
+  color: var(--faint);
+}
+.home-card.backlog:hover .home-stub {
+  color: var(--muted);
+}
+/* Hover actions on a card (a stopped run's Remove). */
+.home-actions {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 16px;
+  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--raised) 85%, var(--bg)) 16px);
+  opacity: 0;
+  transform: translate(4px, -50%);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.home-card:hover .home-actions,
+.home-card:focus-within .home-actions {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+.home-action {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.home-action:hover {
+  background: var(--active);
+  color: var(--text);
+}
+/* Hand to Claude, in a ticket's details. */
+.home-hand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin-left: 4px;
+  padding: 0 10px 0 8px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.home-hand:hover {
+  filter: brightness(1.08);
+}
+.home-card.busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.home-logo {
+  display: inline-flex;
+  align-self: center;
+  color: var(--faint);
+}
+.home-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-note {
+  color: var(--faint);
+}
+.home-flash {
+  margin: -14px 0 18px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.home-flash.error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.home-flash[hidden],
+.home-connect[hidden],
+.home-tools[hidden] {
+  display: none;
+}
+.home-errors:empty {
+  display: none;
+}
+.home-errors {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.home-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: color-mix(in srgb, var(--danger) 50%, var(--text));
+  font-size: 12px;
+}
+.home-link {
+  margin-left: auto;
+  color: var(--text);
+  text-decoration: underline;
+  white-space: nowrap;
+}
+/* Nothing connected: a prompt above the board. */
+.home-connect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-bottom: 26px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in srgb, var(--text) 14%, transparent);
+}
+.home-connect-logos {
+  display: flex;
+  gap: 8px;
+  color: var(--muted);
+}
+.home-connect-text {
+  flex: 1;
+  min-width: 220px;
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.home-connect-text strong {
+  color: var(--text);
+  font-weight: 500;
+}
+.home-connect-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 500;
+}
+/* Under the backlog: which tickets are showing, and previous/next. */
+.home-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 0 2px;
+  color: var(--faint);
+  font-family: var(--code);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.home-pager[hidden] {
+  display: none;
+}
+.home-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.home-page-of {
+  min-width: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+.home-step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+}
+.home-step:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.home-step:disabled {
+  opacity: 0.35;
+}
+.home-more {
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 11.5px;
+  text-align: center;
+}
+
+/* ---- agents ---- */
+
+.home-card.agent {
+  --cut: 84px;
+  --notch: 6px;
+  min-height: 112px;
+}
+.home-card.agent .home-stub {
+  --bot-face: color-mix(in srgb, var(--bot) 30%, #fff);
+  gap: 8px;
+}
+.home-card.agent .bot {
+  width: 50px;
+  height: 50px;
+}
+.home-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bot) 14%, transparent);
+  color: var(--bot);
+  font-family: var(--code);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.home-log {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--sunken);
+  font-family: var(--code);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.home-log div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-log div:not(:last-child) {
+  opacity: 0.55;
+}
+.home-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.home-tab::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--bot);
+}
+.home-card.agent[data-status="waiting"] {
+  background: color-mix(in srgb, var(--waiting) 7%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--waiting) 45%, transparent);
+}
+.home-card.agent[data-status="error"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
+}
+.home-card.agent[data-status="error"] .home-answer {
+  color: var(--danger);
+}
+.home-card.agent[data-status="waiting"] .home-log div:last-child {
+  color: var(--waiting);
+}
+.home-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--waiting);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.home-card.agent[data-status="idle"],
+.home-card.agent[data-status="stopped"] {
+  min-height: 84px;
+  background: transparent;
+}
+.home-card.agent[data-status="idle"]:hover,
+.home-card.agent[data-status="stopped"]:hover {
+  background: var(--card);
+}
+
+.home-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- pull requests ---- */
+
+.home-card.pull {
+  --cut: 64px;
+  --tone: var(--pr);
+}
+.home-card.pull .home-stub {
+  color: var(--tone);
+  font-family: var(--code);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.home-card.pull[data-review="CHANGES_REQUESTED"] {
+  --tone: var(--danger);
+}
+.home-card.pull[data-review="REVIEW_REQUIRED"] {
+  --tone: var(--waiting);
+}
+.home-card.pull[data-state="CLOSED"] {
+  --tone: var(--danger);
+  background: transparent;
+}
+.home-card.pull[data-state="MERGED"] {
+  --tone: var(--merged);
+  background: transparent;
+}
+.home-card.pull[data-state="MERGED"] .home-name {
+  color: var(--muted);
+}
+.home-cleanup {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.home-cleanup:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.home-holder {
+  --bot-face: color-mix(in srgb, var(--bot) 30%, #fff);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.home-holder:hover {
+  color: var(--text);
+}
+.home-holder .bot {
+  width: 16px;
+  height: 16px;
+}
+/* ---- empty lanes ---- */
+
+.home-empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  min-height: 112px;
+  padding: 18px;
+  border-radius: 9px;
+  border: 1px dashed var(--border);
+  color: var(--faint);
+  font-size: 12px;
+  text-align: center;
+}
+.home-empty strong {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ---- handing a ticket over: the stub flies to the agent lane ---- */
+
+.home-flying {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  transition: transform 0.55s cubic-bezier(0.6, 0, 0.2, 1);
+}
+.home-card.arrived {
+  animation: home-arrive 0.6s ease-out;
+}
+@keyframes home-arrive {
+  from {
+    box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent);
+  }
+}
+.home-card.leaving {
+  animation: home-leave 0.3s ease-in forwards;
+}
+@keyframes home-leave {
+  to {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-flying {
+    transition: none;
+  }
+  .home-card.arrived,
+  .home-card.leaving {
+    animation: none;
+  }
+}
+
+/* ---- a ticket's details ---- */
+
+.home-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: rgba(0, 0, 0, calc(0.5 * var(--shadow-k)));
+  animation: home-fade 0.12s ease-out;
+}
+.home-modal {
+  display: flex;
+  flex-direction: column;
+  width: 640px;
+  max-width: 100%;
+  max-height: min(760px, 100%);
+  border-radius: 12px;
+  background: var(--raised);
+  border: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, calc(0.5 * var(--shadow-k)));
+  animation: home-rise 0.16s ease-out;
+  user-select: text;
+  -webkit-user-select: text;
+}
+@keyframes home-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes home-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-modal-backdrop,
+  .home-modal {
+    animation: none;
+  }
+}
+.home-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 0 20px;
+}
+.home-modal-where {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.home-modal-where .home-logo {
+  color: var(--muted);
+}
+.home-modal-dot {
+  color: var(--faint);
+}
+.home-modal-x {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.home-modal-x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.home-modal-title {
+  margin: 10px 20px 0;
+  font-family: var(--display);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.home-modal-meta {
+  margin: 12px 20px 0;
+}
+.home-modal-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.home-modal-desc {
+  flex: 1;
+  min-height: 80px;
+  margin-top: 16px;
+  padding: 4px 20px 16px;
+  border-top: 1px solid var(--border);
+  overflow: auto;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.home-modal-desc > * {
+  margin: 12px 0 0;
+}
+.home-modal-desc h3 {
+  margin-top: 18px;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.home-modal-desc ul,
+.home-modal-desc ol {
+  padding-left: 20px;
+}
+.home-modal-desc li + li {
+  margin-top: 3px;
+}
+.home-modal-desc code,
+.home-modal-desc pre {
+  font-family: var(--code);
+  font-size: 12px;
+}
+.home-modal-desc code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--sunken);
+}
+.home-modal-desc pre {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--sunken);
+  white-space: pre-wrap;
+}
+.home-modal-desc blockquote {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.home-modal-desc hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.home-modal-link {
+  color: var(--accent);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.home-modal-link:hover {
+  text-decoration: underline;
+}
+.home-modal-none {
+  color: var(--faint);
+}
+.home-modal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px 12px 14px;
+  border-top: 1px solid var(--border);
+}
+.home-modal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.home-modal-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.home-modal-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.home-modal-hand {
+  height: 32px;
+  margin-left: auto;
+  padding: 0 14px 0 11px;
+  font-size: 12.5px;
+}
+.home-modal-hand:focus-visible,
+.home-modal-button:focus-visible,
+.home-modal-x:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- local servers: a tile in the header, and a drawer of them ---- */
+
+/* The usage card, and the Local servers button standing beside it, as tall. */
+.home-side {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: min(780px, 100%);
+}
+.home-side .home-limits {
+  flex: 1;
+  min-width: 0;
+}
+.home-servers {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 80px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: center;
+}
+.home-servers:hover {
+  background: color-mix(in srgb, var(--raised) 85%, var(--bg));
+  color: var(--text);
+}
+.home-servers:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-servers-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+}
+.home-servers-count {
+  color: var(--accent);
+  font-weight: 600;
+}
+.home-servers:not(.live) .home-servers-count {
+  color: var(--muted);
+}
+
+.home-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, calc(0.35 * var(--shadow-k)));
+  animation: home-fade 0.12s ease-out;
+}
+.home-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100%);
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid color-mix(in srgb, var(--text) 9%, transparent);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, calc(0.4 * var(--shadow-k)));
+  animation: home-slide 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+  container-type: inline-size;
+}
+@keyframes home-slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-drawer-backdrop,
+  .home-drawer {
+    animation: none;
+  }
+}
+.home-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(var(--titlebar-h) + 4px) 14px 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.home-drawer-title {
+  flex: 1;
+  margin: 0;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.home-drawer-hint {
+  display: inline-flex;
+}
+.home-drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 18px 20px 32px;
+}
+
+/* In the drawer each server is a card: its address on top, with Open and
+   Copy beside it; the tab that started it and what's serving it below. */
+.home-drawer .server-list {
+  gap: 22px;
+}
+.home-drawer .server-rows {
+  gap: 8px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+.home-drawer .server-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    "open open go copy dismiss"
+    "tab proc proc proc proc";
+  align-items: center;
+  row-gap: 0;
+  padding: 0 8px 10px 0;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  background: var(--card);
+}
+.home-drawer .server-row + .server-row {
+  border-top: 0;
+}
+.home-drawer .server-row[data-state="stopped"] {
+  background: transparent;
+}
+.home-drawer .server-open {
+  grid-area: open;
+  padding: 12px 10px 6px 16px;
+}
+.home-drawer .server-go {
+  grid-area: go;
+  margin: 0 6px;
+}
+.home-drawer .server-copy {
+  grid-area: copy;
+}
+.home-drawer .server-dismiss {
+  grid-area: dismiss;
+}
+.home-drawer .server-tab {
+  grid-area: tab;
+  margin-left: 38px;
+  max-width: 180px;
+}
+.home-drawer .server-proc {
+  grid-area: proc;
+  margin-left: 0;
+  padding-left: 10px;
+}

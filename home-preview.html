@@ -6,7 +6,7 @@
     <title>Home Preview</title>
     <script type="module" src="/src/homePreview.ts"></script>
     <style>
-      /* Dev-only page: the real Home page, fed mock tabs, agents and tickets. Not part of the build. */
+      /* Dev-only page: the Home page, fed mock data. Not part of the build. */
       body {
         display: flex;
         flex-direction: column;
@@ -60,6 +60,8 @@
         position: relative;
         flex: 1;
         min-height: 0;
+        overflow: auto;
+        user-select: text;
       }
     </style>
   </head>

@@ -20,7 +20,7 @@ pub struct GitInfo {
 /// A git binary that won't pop up the "install developer tools" dialog:
 /// `/usr/bin/git` is only a shim that does when they're missing. Apps launched
 /// from Finder don't get the user's PATH, so look in the usual places.
-fn git_binary() -> Option<&'static str> {
+pub(crate) fn git_binary() -> Option<&'static str> {
     static GIT: OnceLock<Option<&'static str>> = OnceLock::new();
     *GIT.get_or_init(|| {
         [
@@ -44,13 +44,15 @@ fn git(dir: &str, args: &[&str]) -> Option<String> {
 }
 
 /// Runs git in `dir`, returning its stdout, or its error message if it failed.
-fn run(dir: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run(dir: &str, args: &[&str]) -> Result<String, String> {
     let out = Command::new(git_binary().ok_or("git isn't installed")?)
         .arg("-C")
         .arg(dir)
         .args(args)
         // Polling must never take the index lock out from under the user's own git commands.
         .env("GIT_OPTIONAL_LOCKS", "0")
+        // Fetching must fail rather than wait on a password prompt nobody can see.
+        .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(std::process::Stdio::null())
         .output()
         .map_err(|e| e.to_string())?;

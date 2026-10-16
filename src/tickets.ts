@@ -4,6 +4,7 @@ import { Page, el } from "./page";
 import {
   ArrowDown,
   ArrowUp,
+  Bot,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -16,14 +17,14 @@ import {
   RotateCcw,
   Search,
   Settings,
-  Ticket as TicketIcon,
+  Trash2,
   Undo2,
   X,
   icon,
 } from "./icons";
-import { kbdFor } from "./kbd";
 import { showToast } from "./toast";
 import { providerLogo, type Provider } from "./providerLogos";
+import { RUN_LABELS, runKey, type Run, type RunStore } from "./runs";
 
 export type { Provider };
 
@@ -43,6 +44,8 @@ export interface Ticket {
   updated: string;
   /** A branch name the service suggests (Linear does). */
   branch: string | null;
+  /** The description, cut to a few thousand characters. */
+  body?: string;
 }
 
 /** An open GitHub pull request the user wrote, or was asked to review. */
@@ -301,6 +304,17 @@ export const ticketStore = new TicketStore();
 
 // ---- the page ----
 
+/** Handing tickets to Claude in their own worktrees (see runs.ts). */
+export interface RunHooks {
+  store: RunStore;
+  /** Asks which repo if it doesn't know, then makes the worktree and starts Claude in a new tab. Resolves "" if cancelled. */
+  start(ticket: Ticket, branch: string): Promise<string>;
+  /** Goes to the run's tab, resuming Claude in a new one if it's gone. */
+  open(run: Run): void;
+  /** Removes the worktree (and the branch, once merged). */
+  cleanup(run: Run): Promise<string>;
+}
+
 type SortKey = "source" | "id" | "title" | "project" | "status" | "updated";
 type Within = "any" | "1d" | "7d" | "30d";
 
@@ -368,9 +382,11 @@ export class TicketsPage extends Page {
     private onBranch: (ticket: Ticket, branch: string) => Promise<string>,
     private onSettings: () => void,
     private open_: (url: string) => void = (url) => void openUrl(url),
+    private runs?: RunHooks,
   ) {
     super(host);
     store.onChange(() => this.isOpen && this.render());
+    runs?.store.onChange(() => this.isOpen && this.renderTable());
   }
 
   open() {
@@ -789,7 +805,7 @@ export class TicketsPage extends Page {
     row.dataset.provider = t.provider;
     // Anywhere on the row but the actions opens the ticket.
     row.addEventListener("click", (e) => {
-      if (!(e.target as Element).closest(".ticket-actions")) this.open_(t.url);
+      if (!(e.target as Element).closest(".ticket-actions, .ticket-run")) this.open_(t.url);
     });
     const cell = (cls: string, ...children: (Node | string)[]) => {
       const td = el("td", cls);
@@ -818,6 +834,28 @@ export class TicketsPage extends Page {
       return b;
     };
     const branch = branchName(t);
+    const report = (p: Promise<string>) => p.then((msg) => msg && this.showFlash(msg), (e) => this.showFlash(String(e), true));
+    const hooks = this.runs;
+    const run = hooks?.store.get(runKey(t));
+    const title = el("div", "ticket-title");
+    title.append(open);
+    if (hooks && run) {
+      const state = hooks.store.state(run);
+      const chip = el("button", "ticket-run");
+      chip.dataset.state = state;
+      const pr = run.pull ? ` #${run.pull.number}` : "";
+      chip.append(el("span", "ticket-status-dot"), RUN_LABELS[state] + (state === "pr" || state === "merged" ? pr : ""));
+      chip.title = state === "pr" || state === "merged" || state === "closed" ? `Open pull request${pr}` : "Go to Claude's tab";
+      chip.addEventListener("click", () => (run.pull && !hooks.store.agentFor(run) ? this.open_(run.pull.url) : hooks.open(run)));
+      title.append(chip);
+    }
+    if (hooks)
+      actions.append(
+        run
+          ? action(Bot, "Go to Claude's tab", () => hooks.open(run))
+          : action(Bot, "Work on this with Claude, in its own worktree", () => void report(hooks.start(t, branch))),
+      );
+    if (hooks && run) actions.append(action(Trash2, `Remove the worktree${run.pull?.state === "MERGED" ? ` and ${run.branch}` : ""}`, () => void report(hooks.cleanup(run))));
     actions.append(
       action(GitBranchPlus, `Start branch ${branch}`, () => {
         this.onBranch(t, branch).then(
@@ -831,7 +869,7 @@ export class TicketsPage extends Page {
     row.append(
       cell("col-source", logo),
       cell("col-id", t.id),
-      cell("col-title", open),
+      cell("col-title", title),
       cell("col-project", project),
       cell("col-status", status),
       cell("col-actions", actions),
@@ -981,43 +1019,4 @@ function copied(b: HTMLButtonElement, message: string) {
   showToast(message);
   b.classList.add("done");
   setTimeout(() => b.classList.remove("done"), 1200);
-}
-
-// ---- the sidebar row ----
-
-/** The Tickets row at the top of the sidebar, while any service is connected or the page is open. */
-export class TicketsRow {
-  constructor(
-    private store: TicketStore,
-    private slot: HTMLElement,
-    private page: TicketsPage,
-  ) {
-    store.onChange(() => this.render());
-    Page.onChange(() => this.render());
-    this.render();
-  }
-
-  private render() {
-    const open = Page.current === this.page;
-    if (this.store.connected.length === 0 && !open) {
-      this.slot.replaceChildren();
-      return;
-    }
-    const count = this.store.tickets.length;
-    const row = el("button", "tab monitor-row tickets-row");
-    row.type = "button";
-    if (open) row.classList.add("active");
-    const reviews = this.store.pulls.filter((p) => p.kind === "review" && !this.store.isDismissed(p)).length;
-    row.dataset.tip = `Tickets · ${count} assigned to you${reviews ? ` · ${reviews} review${reviews === 1 ? "" : "s"} requested` : ""}`;
-    const glyph = el("span", "monitor-icon tickets-icon");
-    glyph.append(icon(TicketIcon, 14));
-    const hint = el("span", "tab-hint");
-    hint.append(kbdFor("openTickets"));
-    row.append(glyph, el("span", "tab-title", "Tickets"), el("span", "monitor-count", count ? String(count) : ""), hint);
-    row.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.page.toggle();
-    });
-    this.slot.replaceChildren(row);
-  }
 }

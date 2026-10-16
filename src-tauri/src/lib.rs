@@ -9,6 +9,7 @@ mod pty;
 mod servers;
 mod tickets;
 mod usage;
+mod worktrees;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Runtime};
@@ -95,6 +96,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(pty::PtyState::default())
         .manage(agents::AgentState::default())
         .manage(servers::ServerState::default())
@@ -155,6 +157,9 @@ pub fn run() {
             tickets::tickets_disconnect,
             tickets::tickets_list,
             tickets::tickets_pulls,
+            tickets::tickets_branch_pull,
+            worktrees::worktree_start,
+            worktrees::worktree_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

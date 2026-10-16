@@ -278,7 +278,7 @@ export class Settings extends Page {
   private buildIntegrations(content: HTMLElement) {
     const section = el("section", "page-section");
     const intro = el("p", "page-intro");
-    intro.append("Connect a service to list the tickets assigned to you on the Tickets page (", kbdFor("openTickets"), "). Tokens are kept in your macOS Keychain.");
+    intro.append("Connect a service to list the tickets assigned to you on Home (", kbdFor("openHome"), "). Tokens are kept in your macOS Keychain.");
     const cards = el("div", "integration-list");
     section.append(sectionTitle("Ticket services", TicketIcon), intro, cards);
     content.append(section);
@@ -447,7 +447,7 @@ export class Settings extends Page {
 
   private buildMonitor() {
     const section = el("section", "page-section");
-    const intro = el("p", "page-intro", `How many of each pane's latest screen lines its Agent Monitor card shows, with two older ones fading out above them. ${DEFAULT_LOG_LINES} by default.`);
+    const intro = el("p", "page-intro", `How many of each agent's latest screen lines its card on Home shows. ${DEFAULT_LOG_LINES} by default.`);
     const input = el("input", "font-input font-number");
     input.type = "number";
     input.min = String(MIN_LOG_LINES);
@@ -461,7 +461,7 @@ export class Settings extends Page {
     input.addEventListener("blur", () => (input.value = String(logLines())));
     const field = el("label", "font-field monitor-lines-field");
     field.append(el("span", "font-label", "Log lines"), input);
-    section.append(sectionTitle("Agent Monitor", Radar), intro, field);
+    section.append(sectionTitle("Agents", Radar), intro, field);
     return section;
   }
 
