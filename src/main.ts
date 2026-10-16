@@ -9,6 +9,7 @@ import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor, MonitorPage } from "./monitor";
 import { LocalServers, ServersPage } from "./servers";
+import { DiffSheet, registerDiffSheet } from "./diffview";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
@@ -58,6 +59,11 @@ const serversPage = new ServersPage(
   (key) => servers.dismiss(key),
 );
 const servers = new LocalServers(ws, $("#servers-slot"), serversPage);
+const diffSheet = new DiffSheet();
+diffSheet.onClose = () => {
+  if (!Page.current) focusTerminal();
+};
+registerDiffSheet(diffSheet);
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
 const layoutPicker = new LayoutPicker($("#terminals"), ws);
@@ -405,6 +411,7 @@ ws.onChange(updateTitle);
 // A page takes the active spot: its sidebar button lights up and no tab does.
 Page.onChange(() => {
   const page = Page.current;
+  if (page) diffSheet.close();
   sidebar.setShowActive(!page);
   $("#open-settings").classList.toggle("active", page === settings);
   $("#open-shortcuts").classList.toggle("active", page === shortcutsPage);

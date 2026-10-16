@@ -144,6 +144,7 @@ pub fn run() {
             git::git_status,
             git::git_branches,
             git::git_checkout,
+            git::git_diff,
             servers::local_servers,
         ])
         .run(tauri::generate_context!())

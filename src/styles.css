@@ -4973,12 +4973,14 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   color: var(--danger);
 }
 
-.pane-status-branch {
+.pane-status-branch,
+.pane-status-changes {
   pointer-events: auto;
   cursor: pointer;
 }
 
-.pane-status-branch:hover {
+.pane-status-branch:hover,
+.pane-status-changes:hover {
   color: var(--text);
   border-color: color-mix(in srgb, var(--text) 16%, transparent);
 }
@@ -5058,4 +5060,465 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ---- Changes (diff view), opened from a pane's +/- card ---- */
+.diff-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  overflow: hidden;
+}
+.diff-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
+}
+.diff-sheet {
+  --diff-add: var(--group-green, #4ade80);
+  --diff-del: var(--danger);
+  --diff-nav-w: 220px;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(1100px, 80vw);
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: -24px 0 64px rgb(0 0 0 / calc(0.4 * var(--shadow-k)));
+  container-type: inline-size;
+  contain: layout paint style;
+  will-change: transform;
+}
+.diff-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* Padded here, not on the scroller: WebKit pins sticky headers inside a
+   scroller's padding, which let lines show through above them. */
+.diff-content {
+  padding: 14px 16px 48px;
+}
+.diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  height: var(--titlebar-h);
+  padding: 0 10px 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.diff-head-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--muted);
+}
+.diff-title {
+  margin: 0 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.diff-meta-repo,
+.diff-meta-branch {
+  font-family: var(--code);
+}
+.diff-meta-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.diff-meta-sep {
+  color: var(--faint);
+}
+.diff-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.diff-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--sunken);
+}
+.diff-toggle-option,
+.diff-icon-button,
+.diff-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.diff-toggle-option:hover,
+.diff-icon-button:hover,
+.diff-fold:hover {
+  color: var(--text);
+}
+.diff-toggle-option[aria-checked="true"] {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / calc(0.25 * var(--shadow-k)));
+}
+.diff-icon-button {
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 6px;
+}
+.diff-icon-button:hover,
+.diff-fold:hover {
+  background: var(--hover);
+}
+.diff-fold {
+  height: 28px;
+  border-radius: 6px;
+}
+.diff-fold[hidden] {
+  display: none;
+}
+
+.diff-layout {
+  display: grid;
+  grid-template-columns: var(--diff-nav-w) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.diff-files {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: calc(100vh - var(--titlebar-h) - 80px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.diff-summary {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 8px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+.diff-counts {
+  display: inline-flex;
+  gap: 6px;
+  font-family: var(--code);
+  font-size: 11.5px;
+}
+.diff-added {
+  color: var(--diff-add);
+}
+.diff-removed {
+  color: var(--diff-del);
+}
+.diff-file-link {
+  display: grid;
+  grid-template-columns: 14px minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.diff-file-link:hover {
+  background: var(--hover);
+}
+.diff-status {
+  font-family: var(--code);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.diff-file-link.added .diff-status {
+  color: var(--diff-add);
+}
+.diff-file-link.deleted .diff-status {
+  color: var(--diff-del);
+}
+.diff-file-name,
+.diff-file-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-file-dir {
+  color: var(--faint);
+  font-size: 11px;
+  direction: rtl;
+  text-align: left;
+}
+.diff-bar {
+  display: inline-flex;
+  gap: 1.5px;
+  align-self: center;
+}
+.diff-bar span {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+.diff-bar .add {
+  background: var(--diff-add);
+}
+.diff-bar .del {
+  background: var(--diff-del);
+}
+
+.diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.diff-file {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--sunken);
+  overflow: clip;
+  scroll-margin-top: 0;
+}
+.diff-file-head {
+  position: sticky;
+  top: 0;
+  /* Above the line numbers, which are pinned too. */
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--code);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.diff-file-head[aria-expanded="false"] {
+  border-bottom: 0;
+}
+.diff-chevron,
+.diff-file-icon {
+  flex: none;
+  color: var(--muted);
+}
+.diff-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-file-old {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+.diff-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.diff-badge.modified {
+  display: none;
+}
+.diff-badge.added {
+  color: var(--diff-add);
+  background: color-mix(in srgb, var(--diff-add) 14%, transparent);
+}
+.diff-badge.deleted {
+  color: var(--diff-del);
+  background: color-mix(in srgb, var(--diff-del) 14%, transparent);
+}
+
+/* Rows are absolutely placed and only the visible ones exist (see VirtualDiff),
+   so every row has a fixed height: 19px, or 26px for a hunk's header. */
+.diff-grid {
+  display: flex;
+  font-family: var(--code);
+  font-size: 12px;
+  line-height: 19px;
+  tab-size: 4;
+}
+.diff-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.diff-pane + .diff-pane {
+  border-left: 1px solid var(--border);
+}
+.diff-layer {
+  position: relative;
+}
+.diff-gutter {
+  flex: none;
+  width: 96px;
+  user-select: none;
+}
+.diff-grid.split .diff-gutter {
+  width: 48px;
+}
+.diff-codecol {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.diff-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  white-space: pre;
+}
+.diff-num {
+  flex: 1;
+  padding-right: 10px;
+  color: var(--faint);
+  text-align: right;
+}
+.diff-code {
+  position: relative;
+  padding: 0 16px 0 22px;
+  color: var(--text);
+}
+.diff-code::before {
+  position: absolute;
+  left: 8px;
+  user-select: none;
+}
+.diff-line.add {
+  background: color-mix(in srgb, var(--diff-add) 11%, transparent);
+}
+.diff-gutter .diff-line.add {
+  background: color-mix(in srgb, var(--diff-add) 16%, transparent);
+  color: color-mix(in srgb, var(--diff-add) 70%, var(--text));
+}
+.diff-line.add .diff-code::before {
+  content: "+";
+  color: var(--diff-add);
+}
+.diff-line.del {
+  background: color-mix(in srgb, var(--diff-del) 11%, transparent);
+}
+.diff-gutter .diff-line.del {
+  background: color-mix(in srgb, var(--diff-del) 16%, transparent);
+  color: color-mix(in srgb, var(--diff-del) 70%, var(--text));
+}
+.diff-line.del .diff-code::before {
+  content: "-";
+  color: var(--diff-del);
+}
+.diff-gutter .diff-line.add .diff-num,
+.diff-gutter .diff-line.del .diff-num {
+  color: inherit;
+}
+.diff-line.note .diff-code {
+  color: var(--faint);
+  font-style: italic;
+}
+.diff-line.empty {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent 0 4px,
+    color-mix(in srgb, var(--text) 3%, transparent) 4px 5px
+  );
+}
+.diff-line.hunk {
+  align-items: center;
+  padding-left: 10px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.diff-word {
+  border-radius: 2px;
+  color: inherit;
+}
+.diff-line.add .diff-word {
+  background: color-mix(in srgb, var(--diff-add) 32%, transparent);
+}
+.diff-line.del .diff-word {
+  background: color-mix(in srgb, var(--diff-del) 32%, transparent);
+}
+.diff-note {
+  padding: 14px 16px;
+  color: var(--muted);
+  font-family: var(--sans, inherit);
+}
+.diff-show {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.diff-show:hover {
+  text-decoration: underline;
+}
+.diff-empty {
+  padding: 60px 0;
+  text-align: center;
+}
+.diff-empty-title {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+}
+.diff-empty-text {
+  margin: 0;
+  color: var(--muted);
+}
+@container (max-width: 760px) {
+  .diff-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .diff-files {
+    display: none;
+  }
 }
