@@ -5540,7 +5540,7 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   color: var(--group-yellow, var(--accent));
 }
 .page-body.tickets-body {
-  max-width: 1280px;
+  max-width: 1600px;
 }
 .tickets-head {
   margin-bottom: 22px;
@@ -5966,6 +5966,149 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   }
 }
 
+/* Tickets, with GitHub pull requests in a column on the right. */
+.page-body.tickets-body {
+  container-type: inline-size;
+}
+.tickets-layout.with-pulls {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  gap: 24px;
+  align-items: start;
+}
+.tickets-col {
+  container-type: inline-size;
+  min-width: 0;
+}
+.pulls-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+}
+.pulls-pane[hidden] {
+  display: none;
+}
+@container (max-width: 980px) {
+  .tickets-layout.with-pulls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pulls-pane {
+    order: -1;
+  }
+}
+.pulls-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  margin-bottom: 6px;
+  color: var(--faint);
+}
+.pulls-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.pulls-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pulls-toggle {
+  margin-left: auto;
+}
+.pulls-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.pulls-none {
+  padding: 18px 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+.pull-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.pull-item + .pull-item {
+  border-top: 1px solid var(--border);
+}
+.pull-item:hover {
+  background: var(--hover);
+}
+.pull-item:active {
+  background: var(--active);
+}
+.pull-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+.page .pull-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.pull-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+.pull-meta .ticket-status {
+  flex: none;
+  height: 18px;
+  font-size: 11px;
+}
+.pull-where,
+.pull-author {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pull-where {
+  font-family: var(--code);
+  font-size: 11px;
+}
+.pull-when {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.pull-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 4px 14px rgb(0 0 0 / calc(0.25 * var(--shadow-k)));
+}
+.pull-item:hover .pull-actions,
+.pull-item:focus-within .pull-actions {
+  opacity: 1;
+}
+.pull-item.dismissed > :not(.pull-actions) {
+  opacity: 0.45;
+}
+
 .tickets-pager {
   display: flex;
   align-items: center;
@@ -6214,6 +6357,15 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.toast-action {
+  flex: none;
+  margin-left: 6px;
+  color: var(--accent);
+  font-weight: 500;
+}
+.toast-action:hover {
+  text-decoration: underline;
 }
 @keyframes toast-in {
   from {

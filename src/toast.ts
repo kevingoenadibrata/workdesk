@@ -2,8 +2,8 @@ import { Check, icon } from "./icons";
 
 let current: { el: HTMLElement; timer: number } | null = null;
 
-/** A short note at the bottom of the window, like "Copied ENG-42". Replaces any showing. */
-export function showToast(message: string, ms = 1800) {
+/** A short note at the bottom of the window, like "Copied ENG-42", with an optional button such as Undo. Replaces any showing. */
+export function showToast(message: string, ms = 1800, action?: { label: string; run: () => void }) {
   if (current) {
     clearTimeout(current.timer);
     current.el.remove();
@@ -15,6 +15,18 @@ export function showToast(message: string, ms = 1800) {
   text.className = "toast-text";
   text.textContent = message;
   el.append(icon(Check, 13, "toast-icon"), text);
+  if (action) {
+    const b = document.createElement("button");
+    b.className = "toast-action";
+    b.textContent = action.label;
+    b.addEventListener("click", () => {
+      action.run();
+      clearTimeout(mine.timer);
+      el.remove();
+      if (current === mine) current = null;
+    });
+    el.append(b);
+  }
   document.body.append(el);
   const mine = {
     el,
