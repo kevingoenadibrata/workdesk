@@ -84,7 +84,19 @@ if (view) {
 }
 
 loadTheme();
-const sheet = new DiffSheet();
+// ?docked=W docks the panel in a mock pane W px wide, as it sits in the app.
+const docked = Number(new URLSearchParams(location.search).get("docked"));
+let host: HTMLElement | undefined;
+if (docked) {
+  host = document.createElement("div");
+  host.className = "pane-body";
+  host.style.cssText = `position:fixed;top:0;left:0;bottom:0;width:${docked}px;border-right:1px solid var(--border)`;
+  const term = document.createElement("div");
+  term.className = "term";
+  host.append(term);
+  document.body.append(host);
+}
+const sheet = new DiffSheet(host);
 void sheet.show("/mock", "greeter", "feature/excited-greetings");
 
 const themeSelect = document.getElementById("preview-theme") as HTMLSelectElement;

@@ -5,11 +5,13 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { fileLinkProvider } from "./filelinks";
-import { gitBranches, gitCheckout, gitStatus, spawnPty, type GitInfo, type PtyHandle } from "./pty";
+import { busyProcesses, gitBranches, gitCheckout, gitStatus, spawnPty, type GitInfo, type PtyHandle } from "./pty";
+import { FileTree } from "./filetree";
+import { showToast } from "./toast";
 import { closeBranchPicker, openBranchPicker } from "./branchpicker";
-import { showDiff } from "./diffview";
+import { DiffSheet } from "./diffview";
 import { homeDir } from "./recents";
-import { ArrowDown, ArrowUp, CaseSensitive, FolderGit2, GitBranch, Maximize2, Minimize2, Search, X, icon } from "./icons";
+import { ArrowDown, ArrowUp, CaseSensitive, FolderGit2, FolderTree, GitBranch, Maximize2, Minimize2, Search, X, icon } from "./icons";
 import { currentTheme, onThemeChange, type Theme } from "./themes";
 import { currentFont, fontStack, onFontChange } from "./fonts";
 
@@ -61,8 +63,18 @@ export class TermSession {
   private find?: { bar: HTMLDivElement; input: HTMLInputElement; count: HTMLSpanElement; caseButton: HTMLButtonElement };
   private caseSensitive = false;
   private maximizeButton: HTMLButtonElement;
+  private treeButton: HTMLButtonElement;
+  /** Holds the file tree (when open) beside the terminal. */
+  private body: HTMLDivElement;
+  /** The file tree docked on the pane's left, once opened. */
+  private tree?: FileTree;
+  /** The changes since the last commit, docked on the pane's right, once opened. */
+  private diff?: DiffSheet;
+  private changesCard?: HTMLElement;
   /** Row of cards under the terminal showing the git repo it's in; hidden outside one. */
   private statusBar: HTMLDivElement;
+  /** The git cards on the status bar's right; empty outside a repo. */
+  private gitCards: HTMLDivElement;
   private gitKey = "";
   private gitError?: { el: HTMLElement; timer: number };
   private pty?: PtyHandle;
@@ -99,13 +111,23 @@ export class TermSession {
     this.maximizeButton = document.createElement("button");
     this.maximizeButton.className = "pane-maximize";
     this.setMaximized(false);
+    this.treeButton = document.createElement("button");
+    this.treeButton.className = "pane-status-item pane-status-tree";
+    this.treeButton.title = "File tree";
+    this.treeButton.setAttribute("aria-label", "File tree");
+    this.treeButton.append(icon(FolderTree, 12));
     this.header.append(this.headerTitle, this.maximizeButton, close);
     this.el = document.createElement("div");
     this.el.className = "term";
+    this.body = document.createElement("div");
+    this.body.className = "pane-body";
+    this.body.append(this.el);
     this.statusBar = document.createElement("div");
     this.statusBar.className = "pane-status";
-    this.statusBar.hidden = true;
-    this.pane.append(this.header, this.el, this.statusBar);
+    this.gitCards = document.createElement("div");
+    this.gitCards.className = "pane-status-git";
+    this.statusBar.append(this.treeButton, this.gitCards);
+    this.pane.append(this.header, this.body, this.statusBar);
     host.appendChild(this.pane);
 
     close.addEventListener("click", (e) => {
@@ -118,6 +140,11 @@ export class TermSession {
       this.hooks.onMaximize();
     });
     this.maximizeButton.addEventListener("mousedown", (e) => e.stopPropagation());
+    this.treeButton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.toggleTree();
+    });
+    this.treeButton.addEventListener("mousedown", (e) => e.preventDefault());
     this.header.addEventListener("click", () => this.focus());
     this.header.addEventListener("dragstart", (e) => {
       e.dataTransfer!.effectAllowed = "move";
@@ -151,7 +178,7 @@ export class TermSession {
     }
 
     // Clicking into a split pane makes it the tab's focused pane.
-    this.el.addEventListener("focusin", () => this.hooks.onFocus());
+    this.body.addEventListener("focusin", () => this.hooks.onFocus());
     this.term.onData((data) => this.pty?.write(data));
     this.term.attachCustomKeyEventHandler((e) => {
       // xterm.js sends a bare \r for Shift+Enter, indistinguishable from Enter. Send
@@ -191,6 +218,78 @@ export class TermSession {
     if (this.headerTitle.textContent !== title) this.headerTitle.textContent = title;
   }
 
+  /** Records the shell's new folder, and shows it in the file tree if that's open. */
+  setCwd(cwd: string) {
+    this.cwd = cwd;
+    if (this.tree?.el.isConnected) void this.tree.setRoot(cwd);
+  }
+
+  get treeOpen(): boolean {
+    return !!this.tree?.el.isConnected;
+  }
+
+  /** Opens the file tree beside the terminal and focuses it; focuses it if it's open but unfocused; else closes it. */
+  toggleTree() {
+    if (this.treeOpen) {
+      if (this.tree!.el.contains(document.activeElement)) this.closeTree();
+      else this.tree!.focus();
+      return;
+    }
+    if (!this.tree) {
+      this.tree = new FileTree({
+        cd: (path) => void this.cd(path),
+        focusTerminal: () => this.focus(),
+        close: () => this.closeTree(),
+        resized: () => this.fit(),
+      });
+    }
+    this.body.prepend(this.tree.el);
+    this.treeButton.classList.add("active");
+    this.fit();
+    // Re-list even if the folder's the same: files may have changed while it was closed.
+    void this.tree.setRoot(this.dir || homeDir(), true);
+    this.tree.focus();
+  }
+
+  closeTree() {
+    if (!this.treeOpen) return;
+    this.tree!.el.remove();
+    this.treeButton.classList.remove("active");
+    this.fit();
+    this.focus();
+  }
+
+  /** Opens the changes panel beside the terminal, or closes it. */
+  private toggleDiff(info: GitInfo) {
+    if (this.diff?.isOpen) return this.diff.close();
+    if (!this.diff) {
+      this.diff = new DiffSheet(this.body);
+      this.diff.onResize = () => this.fit();
+      this.diff.onClose = () => {
+        this.changesCard?.classList.remove("open");
+        this.fit();
+        this.focus();
+      };
+    }
+    this.changesCard?.classList.add("open");
+    void this.diff.show(this.dir, info.repo, info.branch);
+  }
+
+  /** Types a `cd` into the shell, unless a program has the terminal. */
+  private async cd(path: string) {
+    const id = this.pty?.id;
+    if (id == null) return;
+    const busy = (await busyProcesses([id]).catch(() => ({}) as Record<string, string>))[id];
+    if (busy) {
+      showToast(`Can't cd while ${busy} is running`);
+      return;
+    }
+    // Ctrl+U clears anything half-typed at the prompt first.
+    this.pty!.write(`\x15cd -- '${path.replace(/'/g, "'\\''")}'\r`);
+    this.setCwd(path);
+    this.focus();
+  }
+
   /** Shows whether this pane fills its tab, on the header's toggle. */
   setMaximized(on: boolean) {
     const name = on ? "Restore pane" : "Maximize pane";
@@ -199,13 +298,12 @@ export class TermSession {
     this.maximizeButton.replaceChildren(icon(on ? Minimize2 : Maximize2, 11));
   }
 
-  /** Shows the git repo the shell is in on the status bar, or hides it (`null`) outside one. */
+  /** Shows the git repo the shell is in on the status bar, or hides its cards (`null`) outside one. */
   setGit(info: GitInfo | null) {
     const key = info ? [info.repo, info.branch, info.added, info.removed, info.ahead, info.behind].join("\0") : "";
     if (key === this.gitKey) return;
-    const wasHidden = this.statusBar.hidden;
     this.gitKey = key;
-    this.statusBar.hidden = !info;
+    this.gitCards.hidden = !info;
     if (info) {
       const item = (node: Parameters<typeof icon>[0], text: string, cls: string) => {
         const el = document.createElement("span");
@@ -227,7 +325,9 @@ export class TermSession {
       changes.append(added, removed);
       changes.title = "Show changes since the last commit";
       changes.addEventListener("mousedown", (e) => e.preventDefault());
-      changes.addEventListener("click", () => showDiff(this.dir, info.repo, info.branch));
+      changes.classList.toggle("open", !!this.diff?.isOpen);
+      changes.addEventListener("click", () => this.toggleDiff(info));
+      this.changesCard = changes;
       const branch = item(GitBranch, info.branch || "no commits", "pane-status-branch");
       branch.title = "Switch branch";
       // Like Warp: commits not yet pushed (↑) and not yet pulled (↓).
@@ -235,11 +335,13 @@ export class TermSession {
       if (sync) branch.append(Object.assign(document.createElement("span"), { className: "pane-status-sync", textContent: sync }));
       branch.addEventListener("mousedown", (e) => e.preventDefault());
       branch.addEventListener("click", () => void this.openBranchMenu(branch, info.branch));
-      this.statusBar.replaceChildren(item(FolderGit2, info.repo, "pane-status-repo"), branch, changes);
-      if (this.gitError) this.statusBar.prepend(this.gitError.el);
+      this.gitCards.replaceChildren(item(FolderGit2, info.repo, "pane-status-repo"), branch, changes);
+      if (this.gitError) this.gitCards.prepend(this.gitError.el);
     }
+    // The open panel follows the repo: new edits, another branch.
+    if (info && this.diff?.isOpen) void this.diff.show(this.dir, info.repo, info.branch);
     // Showing or hiding the cards changes the terminal's height.
-    if (wasHidden !== this.statusBar.hidden) this.fit();  }
+  }
 
   private get dir(): string {
     return this.cwd || this.startCwd;
@@ -299,7 +401,7 @@ export class TermSession {
       if (this.gitError?.el === el) this.gitError = undefined;
     }, 6000);
     this.gitError = { el, timer };
-    this.statusBar.prepend(el);
+    this.gitCards.prepend(el);
   }
 
   // ---- find ----

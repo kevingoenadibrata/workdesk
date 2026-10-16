@@ -126,6 +126,17 @@ pub fn open_in_editor(editor: String, folder_app: String, path: String, line: Op
     reap(cmd)
 }
 
+/// Opens a folder in Finder, or shows a file selected in its folder.
+#[tauri::command]
+pub fn show_in_finder(path: String) -> Result<(), String> {
+    let mut c = Command::new("/usr/bin/open");
+    if !Path::new(&path).is_dir() {
+        c.arg("-R");
+    }
+    c.arg(&path);
+    reap(c)
+}
+
 /// Starts `cmd`, and reaps it once it exits so it doesn't linger as a zombie.
 fn reap(mut cmd: Command) -> Result<(), String> {
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;

@@ -44,6 +44,7 @@ export type Action =
   | "resetZoom"
   | "maximizePane"
   | "arrangePanes"
+  | "toggleFileTree"
   | `goToTab${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /**
@@ -66,6 +67,7 @@ export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+shift+u": "unsplit",
   "mod+shift+enter": "maximizePane",
   "mod+l": "arrangePanes",
+  "mod+e": "toggleFileTree",
   "mod+alt+arrowleft": "focusPaneLeft",
   "mod+alt+arrowright": "focusPaneRight",
   "mod+alt+arrowup": "focusPaneUp",
@@ -114,6 +116,7 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
       ["unsplit", "Unsplit into tabs"],
       ["maximizePane", "Maximize or restore pane"],
       ["arrangePanes", "Change layout and rearrange panes"],
+      ["toggleFileTree", "Show or hide the pane's file tree"],
       ["nextPane", "Next pane"],
       ["prevPane", "Previous pane"],
       ["focusPaneLeft", "Focus pane to the left"],

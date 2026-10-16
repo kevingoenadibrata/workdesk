@@ -48,6 +48,14 @@ export {
   Trash2,
   Type,
   Undo2,
+  CornerLeftUp,
+  Eye,
+  EyeOff,
+  File,
+  FolderTree,
+  RefreshCw,
+  SquareTerminal,
+  Ellipsis,
   X,
 } from "lucide";
 

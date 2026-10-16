@@ -1200,7 +1200,7 @@ export class Workspace {
         }
         const cwd = cwds[ptyId] ?? "";
         if (cwd && cwd !== session.cwd) {
-          session.cwd = cwd;
+          session.setCwd(cwd);
           touchRecent(cwd);
           changed = true;
         }
