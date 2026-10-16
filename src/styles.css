@@ -5972,7 +5972,7 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 }
 .tickets-layout.with-pulls {
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
@@ -5989,7 +5989,7 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 .pulls-pane[hidden] {
   display: none;
 }
-@container (max-width: 980px) {
+@container (max-width: 1100px) {
   .tickets-layout.with-pulls {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -331,7 +331,6 @@ const COLUMNS: { key: SortKey; label: string }[] = [
   { key: "title", label: "Title" },
   { key: "project", label: "Project" },
   { key: "status", label: "Status" },
-  { key: "updated", label: "Updated" },
 ];
 
 function loadView(): View {
@@ -722,7 +721,7 @@ export class TicketsPage extends Page {
 
     const table = el("table", "tickets-table");
     const colgroup = el("colgroup", "");
-    for (const c of ["source", "id", "title", "project", "status", "updated", "actions"]) colgroup.append(el("col", `col-${c}`));
+    for (const c of ["source", "id", "title", "project", "status", "actions"]) colgroup.append(el("col", `col-${c}`));
     const head = el("thead", "");
     const tr = el("tr", "");
     for (const c of COLUMNS) {
@@ -733,9 +732,9 @@ export class TicketsPage extends Page {
       b.title = `Sort by ${c.label || "source"}`;
       b.append(c.label);
       if (sorted) b.append(icon(this.view.dir === 1 ? ArrowUp : ArrowDown, 11));
+      // A to Z, then Z to A, then back to most recently updated first (the default, which has no column).
       b.addEventListener("click", () =>
-        // Dates and the first click on anything else: newest/A first.
-        this.setView(sorted ? { dir: this.view.dir === 1 ? -1 : 1 } : { sort: c.key, dir: c.key === "updated" ? -1 : 1 }),
+        this.setView(!sorted ? { sort: c.key, dir: 1 } : this.view.dir === 1 ? { dir: -1 } : { sort: "updated", dir: -1 }),
       );
       th.append(b);
       tr.append(th);
@@ -743,12 +742,11 @@ export class TicketsPage extends Page {
     tr.append(el("th", "col-actions"));
     head.append(tr);
     const tbody = el("tbody", "");
-    const now = Date.now();
-    tbody.append(...shown.map((t) => this.row(t, now)));
+    tbody.append(...shown.map((t) => this.row(t)));
     if (shown.length === 0) {
       const empty = el("tr", "tickets-none");
       const td = el("td", "", loading ? "Loading…" : this.store.tickets.length ? "No tickets match these filters." : "No open tickets assigned to you.");
-      td.colSpan = 7;
+      td.colSpan = 6;
       empty.append(td);
       tbody.append(empty);
     }
@@ -786,7 +784,7 @@ export class TicketsPage extends Page {
     return bar;
   }
 
-  private row(t: Ticket, now: number): HTMLElement {
+  private row(t: Ticket): HTMLElement {
     const row = el("tr", "ticket-row");
     row.dataset.provider = t.provider;
     // Anywhere on the row but the actions opens the ticket.
@@ -807,8 +805,6 @@ export class TicketsPage extends Page {
     const status = el("span", "ticket-status");
     if (t.color) status.style.setProperty("--status", t.color);
     status.append(el("span", "ticket-status-dot"), el("span", "ticket-status-text", t.status));
-    const when = el("span", "", ago(updatedAt(t), now));
-    when.title = `Updated ${new Date(updatedAt(t)).toLocaleString()}`;
     const project = el("span", "", t.project);
     project.title = t.project;
 
@@ -838,7 +834,6 @@ export class TicketsPage extends Page {
       cell("col-title", open),
       cell("col-project", project),
       cell("col-status", status),
-      cell("col-updated", when),
       cell("col-actions", actions),
     );
     return row;
