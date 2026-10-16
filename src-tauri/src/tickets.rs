@@ -45,6 +45,26 @@ pub struct Ticket {
     branch: Option<String>,
 }
 
+/// An open GitHub pull request the user wrote, or was asked to review.
+#[derive(Serialize)]
+pub struct PullRequest {
+    /// "authored" or "review".
+    kind: &'static str,
+    /// "#123".
+    id: String,
+    title: String,
+    url: String,
+    /// "owner/name".
+    repo: String,
+    author: String,
+    draft: bool,
+    /// GitHub's review decision: "APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED", or null.
+    review: Option<String>,
+    /// The PR's head branch.
+    branch: String,
+    updated: String,
+}
+
 /// Whether Workdesk can reach a service, and with what.
 #[derive(Serialize)]
 pub struct Account {
@@ -180,6 +200,37 @@ async fn github_tickets(token: &str) -> Result<Vec<Ticket>, String> {
             }
         })
         .collect())
+}
+
+async fn github_pulls(token: &str) -> Result<Vec<PullRequest>, String> {
+    let query = r#"fragment pr on PullRequest { number title url updatedAt isDraft reviewDecision headRefName author { login } repository { nameWithOwner } }
+        { authored: search(type: ISSUE, first: 100, query: "is:pr is:open author:@me archived:false sort:updated-desc") { nodes { ...pr } }
+          review: search(type: ISSUE, first: 100, query: "is:pr is:open review-requested:@me archived:false sort:updated-desc") { nodes { ...pr } } }"#;
+    let req = client().post("https://api.github.com/graphql").bearer_auth(token).json(&json!({ "query": query }));
+    let body = send("GitHub", req).await?;
+    if let Some(err) = body["errors"].as_array().and_then(|e| e.first()) {
+        return Err(format!("GitHub: {}", str_at(err, "/message")));
+    }
+    let mut out = Vec::new();
+    for kind in ["authored", "review"] {
+        for n in body.pointer(&format!("/data/{kind}/nodes")).and_then(Value::as_array).cloned().unwrap_or_default() {
+            // Search can return issues too; they come back as empty objects here.
+            let Some(number) = n["number"].as_u64() else { continue };
+            out.push(PullRequest {
+                kind,
+                id: format!("#{number}"),
+                title: str_at(&n, "/title"),
+                url: str_at(&n, "/url"),
+                repo: str_at(&n, "/repository/nameWithOwner"),
+                author: str_at(&n, "/author/login"),
+                draft: n["isDraft"].as_bool().unwrap_or_default(),
+                review: n["reviewDecision"].as_str().map(str::to_string),
+                branch: str_at(&n, "/headRefName"),
+                updated: str_at(&n, "/updatedAt"),
+            });
+        }
+    }
+    Ok(out)
 }
 
 // ---- Linear ----
@@ -318,3 +369,10 @@ pub async fn tickets_list(provider: Provider) -> Result<Vec<Ticket>, String> {
     }
 }
 
+
+/// The open GitHub pull requests the user wrote or was asked to review, most recently updated first.
+#[tauri::command]
+pub async fn tickets_pulls() -> Result<Vec<PullRequest>, String> {
+    let (t, _) = tauri::async_runtime::spawn_blocking(|| token(Provider::Github)).await.ok().flatten().ok_or_else(|| missing(Provider::Github))?;
+    github_pulls(&t).await
+}

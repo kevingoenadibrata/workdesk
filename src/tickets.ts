@@ -10,12 +10,15 @@ import {
   ChevronRight,
   Copy,
   GitBranchPlus,
+  GitPullRequest,
   Hash,
   Plug,
   RotateCcw,
   Search,
   Settings,
   Ticket as TicketIcon,
+  Undo2,
+  X,
   icon,
 } from "./icons";
 import { kbdFor } from "./kbd";
@@ -40,6 +43,22 @@ export interface Ticket {
   updated: string;
   /** A branch name the service suggests (Linear does). */
   branch: string | null;
+}
+
+/** An open GitHub pull request the user wrote, or was asked to review. */
+export interface PullRequest {
+  kind: "authored" | "review";
+  /** "#123". */
+  id: string;
+  title: string;
+  url: string;
+  /** "owner/name". */
+  repo: string;
+  author: string;
+  draft: boolean;
+  review: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  branch: string;
+  updated: string;
 }
 
 /** Where a service's token comes from: one pasted in Settings, the `gh` CLI's login, or none. */
@@ -79,9 +98,10 @@ export const ticketsApi = {
   connect: (provider: Provider, token: string) => invoke<string>("tickets_connect", { provider, token }),
   disconnect: (provider: Provider) => invoke<void>("tickets_disconnect", { provider }),
   list: (provider: Provider) => invoke<Ticket[]>("tickets_list", { provider }),
+  pulls: () => invoke<PullRequest[]>("tickets_pulls"),
 };
 
-export function updatedAt(t: Ticket): number {
+export function updatedAt(t: { updated: string }): number {
   return /^\d+$/.test(t.updated) ? Number(t.updated) : Date.parse(t.updated) || 0;
 }
 
@@ -133,12 +153,24 @@ interface ProviderState {
 
 const STALE_MS = 60_000;
 const POLL_MS = 5 * 60_000;
+const DISMISSED_KEY = "workdesk.dismissedPulls";
+
+/** GitHub pull requests, read alongside GitHub's tickets. */
+interface PullState {
+  pulls: PullRequest[];
+  error: string;
+  loading: boolean;
+  at: number;
+}
 
 /** Every connected service's tickets, read on start, every few minutes, and on demand. */
 export class TicketStore {
   readonly state = new Map<Provider, ProviderState>(
     PROVIDERS.map((p) => [p.id, { source: null, tickets: [], error: "", loading: false, at: 0 }]),
   );
+  readonly pullState: PullState = { pulls: [], error: "", loading: false, at: 0 };
+  /** Links of the pull requests the user dismissed. */
+  private dismissed = new Set<string>(loadDismissed());
   private listeners = new Set<() => void>();
   private started = false;
 
@@ -160,7 +192,34 @@ export class TicketStore {
   }
 
   get loading(): boolean {
-    return [...this.state.values()].some((s) => s.loading);
+    return [...this.state.values()].some((s) => s.loading) || this.pullState.loading;
+  }
+
+  /** Pull requests can be listed: GitHub is connected. */
+  get hasPulls(): boolean {
+    return this.state.get("github")!.source != null;
+  }
+
+  get pulls(): PullRequest[] {
+    return this.hasPulls ? this.pullState.pulls : [];
+  }
+
+  isDismissed(pr: PullRequest): boolean {
+    return this.dismissed.has(pr.url);
+  }
+
+  /** Hides `pr` from the list, or brings it back. */
+  setDismissed(pr: PullRequest, dismissed: boolean) {
+    if (dismissed) this.dismissed.add(pr.url);
+    else this.dismissed.delete(pr.url);
+    this.saveDismissed();
+    this.emit();
+  }
+
+  private saveDismissed() {
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify([...this.dismissed]));
+    } catch {}
   }
 
   start() {
@@ -175,16 +234,41 @@ export class TicketStore {
     const accounts = await ticketsApi.accounts().catch(() => []);
     for (const a of accounts) {
       const s = this.state.get(a.provider)!;
-      if (s.source !== a.source) Object.assign(s, { source: a.source, tickets: [], error: "", at: 0 });
+      if (s.source !== a.source) {
+        Object.assign(s, { source: a.source, tickets: [], error: "", at: 0 });
+        if (a.provider === "github") Object.assign(this.pullState, { pulls: [], error: "", at: 0 });
+      }
     }
     this.emit();
-    await Promise.all(
-      this.connected.map((p) => {
+    await Promise.all([
+      ...this.connected.map((p) => {
         const s = this.state.get(p)!;
         if (!force && Date.now() - s.at < STALE_MS) return;
         return this.load(p);
       }),
-    );
+      this.hasPulls && (force || Date.now() - this.pullState.at >= STALE_MS) ? this.loadPulls() : undefined,
+    ]);
+  }
+
+  private async loadPulls() {
+    const s = this.pullState;
+    if (s.loading) return;
+    s.loading = true;
+    this.emit();
+    try {
+      s.pulls = await ticketsApi.pulls();
+      s.error = "";
+      // Forget dismissals of pull requests that were merged or closed.
+      const open = new Set(s.pulls.map((p) => p.url));
+      const before = this.dismissed.size;
+      for (const url of this.dismissed) if (!open.has(url)) this.dismissed.delete(url);
+      if (this.dismissed.size !== before) this.saveDismissed();
+    } catch (e) {
+      s.error = String(e);
+    }
+    s.loading = false;
+    s.at = Date.now();
+    this.emit();
   }
 
   private async load(p: Provider) {
@@ -201,6 +285,15 @@ export class TicketStore {
     s.loading = false;
     s.at = Date.now();
     this.emit();
+  }
+}
+
+function loadDismissed(): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]");
+    return Array.isArray(saved) ? saved.filter((u) => typeof u === "string") : [];
+  } catch {
+    return [];
   }
 }
 
@@ -263,6 +356,10 @@ export class TicketsPage extends Page {
   private filters: HTMLElement | null = null;
   private refreshButton: HTMLButtonElement | null = null;
   private flash: { el: HTMLElement; timer?: number } | null = null;
+  private layout: HTMLElement | null = null;
+  private pullsPane: HTMLElement | null = null;
+  /** The PR sections whose dismissed pull requests are showing. */
+  private showDismissed = new Set<PullRequest["kind"]>();
   private menu: { el: HTMLElement; close: () => void } | null = null;
 
   constructor(
@@ -307,7 +404,7 @@ export class TicketsPage extends Page {
     const head = el("header", "monitor-head tickets-head");
     title.replaceWith(head);
     const text = el("div", "monitor-head-text");
-    text.append(title, el("p", "page-intro monitor-intro", "Open tickets assigned to you on GitHub, Linear and ClickUp. Click one to open it, or start a branch for it in a repo you pick."));
+    text.append(title, el("p", "page-intro monitor-intro", "Open tickets assigned to you on GitHub, Linear and ClickUp, with the GitHub pull requests you opened or were asked to review alongside. Click one to open it."));
     head.append(text);
 
     const bar = el("div", "tickets-bar");
@@ -339,7 +436,14 @@ export class TicketsPage extends Page {
     this.flash = { el: el("div", "tickets-flash") };
     this.flash.el.hidden = true;
     this.body_ = el("div", "tickets-main");
-    body.append(bar, this.filters, this.flash.el, this.body_);
+    // Tickets on the left, GitHub pull requests in a column on the right.
+    this.layout = el("div", "tickets-layout");
+    const left = el("div", "tickets-col");
+    left.append(bar, this.filters, this.flash.el, this.body_);
+    this.pullsPane = el("aside", "pulls-pane");
+    this.pullsPane.setAttribute("aria-label", "Pull requests");
+    this.layout.append(left, this.pullsPane);
+    body.append(this.layout);
     this.render();
     return input;
   }
@@ -350,6 +454,8 @@ export class TicketsPage extends Page {
     this.body_.parentElement?.querySelector<HTMLElement>(".tickets-bar")?.toggleAttribute("hidden", none);
     this.filters?.toggleAttribute("hidden", none);
     this.refreshButton?.classList.toggle("spinning", this.store.loading);
+    this.layout?.classList.toggle("with-pulls", this.store.hasPulls);
+    this.renderPulls();
     if (none) {
       this.body_.replaceChildren(this.emptyState());
       return;
@@ -738,6 +844,103 @@ export class TicketsPage extends Page {
     return row;
   }
 
+  // ---- pull requests ----
+
+  private renderPulls() {
+    const pane = this.pullsPane;
+    if (!pane) return;
+    pane.hidden = !this.store.hasPulls;
+    if (pane.hidden) return;
+    const s = this.store.pullState;
+    const parts: HTMLElement[] = [];
+    if (s.error) {
+      const err = el("div", "tickets-error");
+      err.insertAdjacentHTML("afterbegin", providerLogo("github", 14));
+      err.append(el("span", "", s.error));
+      parts.push(err);
+    }
+    parts.push(
+      this.pullSection("review", "Review requested", "Nobody's waiting on your review."),
+      this.pullSection("authored", "Opened by you", "You have no open pull requests."),
+    );
+    pane.replaceChildren(...parts);
+  }
+
+  private pullSection(kind: PullRequest["kind"], heading: string, none: string): HTMLElement {
+    const section = el("section", "pulls-section");
+    const all = this.store.pulls.filter((p) => p.kind === kind).sort((a, b) => updatedAt(b) - updatedAt(a));
+    const dismissed = all.filter((p) => this.store.isDismissed(p));
+    const showing = this.showDismissed.has(kind) && dismissed.length > 0;
+    const items = showing ? all : all.filter((p) => !this.store.isDismissed(p));
+
+    const head = el("div", "pulls-head");
+    head.append(icon(GitPullRequest, 13), el("h2", "pulls-title", heading), el("span", "pulls-count", String(all.length - dismissed.length)));
+    if (dismissed.length) {
+      const toggle = el("button", "tickets-clear pulls-toggle", showing ? "Hide dismissed" : `${dismissed.length} dismissed`);
+      toggle.title = showing ? "Hide the pull requests you dismissed" : "Show the pull requests you dismissed";
+      toggle.addEventListener("click", () => {
+        if (!this.showDismissed.delete(kind)) this.showDismissed.add(kind);
+        this.renderPulls();
+      });
+      head.append(toggle);
+    }
+
+    const list = el("div", "pulls-list");
+    const now = Date.now();
+    list.append(...items.map((p) => this.pullItem(p, now)));
+    if (items.length === 0) list.append(el("div", "pulls-none", !this.store.pullState.at ? "Loading…" : dismissed.length ? "All dismissed." : none));
+    section.append(head, list);
+    return section;
+  }
+
+  private pullItem(p: PullRequest, now: number): HTMLElement {
+    const dismissed = this.store.isDismissed(p);
+    const item = el("div", dismissed ? "pull-item dismissed" : "pull-item");
+    item.addEventListener("click", (e) => {
+      if (!(e.target as Element).closest(".ticket-actions")) this.open_(p.url);
+    });
+    const name = `${p.repo}${p.id}`;
+    const open = el("button", "pull-title", p.title);
+    open.title = `${p.title}\n${p.branch}`;
+    open.setAttribute("aria-label", `Open ${name} ${p.title} in your browser`);
+
+    const [label, color] = pullStatus(p);
+    const status = el("span", "ticket-status");
+    status.style.setProperty("--status", color);
+    status.append(el("span", "ticket-status-dot"), el("span", "ticket-status-text", label));
+    const where = el("span", "pull-where", `${p.repo.replace(/^[^/]+\//, "")} ${p.id}`);
+    where.title = name;
+    const meta = el("div", "pull-meta");
+    meta.append(status, where);
+    // Your own pull requests are all by you.
+    if (p.kind === "review") meta.append(el("span", "pull-author", p.author));
+    const when = el("span", "pull-when", ago(updatedAt(p), now));
+    when.title = `Updated ${new Date(updatedAt(p)).toLocaleString()}`;
+    meta.append(when);
+
+    const actions = el("div", "ticket-actions pull-actions");
+    const action = (node: Parameters<typeof icon>[0], label: string, run: (b: HTMLButtonElement) => void) => {
+      const b = el("button", "ticket-action");
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.append(icon(node, 13));
+      b.addEventListener("click", () => run(b));
+      return b;
+    };
+    actions.append(
+      action(GitBranchPlus, `Copy branch ${p.branch}`, (b) => void copy(p.branch).then(() => copied(b, `Copied ${p.branch}`))),
+      action(Copy, "Copy link", (b) => void copy(p.url).then(() => copied(b, `Copied link to ${name}`))),
+      dismissed
+        ? action(Undo2, "Restore", () => this.store.setDismissed(p, false))
+        : action(X, "Dismiss", () => {
+            this.store.setDismissed(p, true);
+            showToast(`Dismissed ${name}`, 4000, { label: "Undo", run: () => this.store.setDismissed(p, false) });
+          }),
+    );
+    item.append(open, meta, actions);
+    return item;
+  }
+
   /** A note above the table, e.g. why a branch couldn't be made. */
   private showFlash(message: string, error = false) {
     const f = this.flash;
@@ -747,6 +950,21 @@ export class TicketsPage extends Page {
     f.el.classList.toggle("error", error);
     f.el.hidden = false;
     f.timer = window.setTimeout(() => (f.el.hidden = true), error ? 6000 : 3000);
+  }
+}
+
+/** What a pull request is waiting on, and its color. */
+function pullStatus(p: PullRequest): [string, string] {
+  if (p.draft) return ["Draft", "var(--muted)"];
+  switch (p.review) {
+    case "APPROVED":
+      return ["Approved", "var(--group-green, #4ade80)"];
+    case "CHANGES_REQUESTED":
+      return ["Changes requested", "var(--danger)"];
+    case "REVIEW_REQUIRED":
+      return ["Review required", "var(--group-yellow, #facc15)"];
+    default:
+      return ["Open", "var(--group-green, #4ade80)"];
   }
 }
 
@@ -794,7 +1012,8 @@ export class TicketsRow {
     const row = el("button", "tab monitor-row tickets-row");
     row.type = "button";
     if (open) row.classList.add("active");
-    row.dataset.tip = `Tickets · ${count} assigned to you`;
+    const reviews = this.store.pulls.filter((p) => p.kind === "review" && !this.store.isDismissed(p)).length;
+    row.dataset.tip = `Tickets · ${count} assigned to you${reviews ? ` · ${reviews} review${reviews === 1 ? "" : "s"} requested` : ""}`;
     const glyph = el("span", "monitor-icon tickets-icon");
     glyph.append(icon(TicketIcon, 14));
     const hint = el("span", "tab-hint");

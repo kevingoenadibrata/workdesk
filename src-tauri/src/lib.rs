@@ -152,6 +152,7 @@ pub fn run() {
             tickets::tickets_connect,
             tickets::tickets_disconnect,
             tickets::tickets_list,
+            tickets::tickets_pulls,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

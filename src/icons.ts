@@ -22,6 +22,7 @@ export {
   FolderOpen,
   GitBranch,
   GitBranchPlus,
+  GitPullRequest,
   Hash,
   History,
   Keyboard,
@@ -46,6 +47,7 @@ export {
   Ticket,
   Trash2,
   Type,
+  Undo2,
   X,
 } from "lucide";
 

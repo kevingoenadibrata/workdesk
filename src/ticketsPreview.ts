@@ -3,7 +3,7 @@
 // the dev server. ?settings=1 shows Settings, ?empty=1 nothing connected,
 // ?error=1 a rejected token.
 import "./styles.css";
-import { TicketsPage, ticketStore, type Ticket } from "./tickets";
+import { TicketsPage, ticketStore, type PullRequest, type Ticket } from "./tickets";
 import { Settings } from "./settings";
 import { THEMES, currentTheme, loadTheme, setTheme } from "./themes";
 
@@ -29,6 +29,14 @@ const TICKETS: Record<string, Ticket[]> = {
   ],
 };
 
+const PULLS: PullRequest[] = [
+  { kind: "review", id: "#5758", title: "Run H100 agent-simulation sandboxes on Daytona", url: "https://github.com/acme/api/pull/5758", repo: "acme/api", author: "albertp", draft: false, review: "APPROVED", branch: "cursor/h100-daytona", updated: iso(3 * H) },
+  { kind: "review", id: "#5741", title: "Cache the pricing table between requests", url: "https://github.com/acme/api/pull/5741", repo: "acme/api", author: "mira", draft: false, review: "REVIEW_REQUIRED", branch: "mira/pricing-cache", updated: iso(28 * H) },
+  { kind: "authored", id: "#5930", title: "Dismiss ready suggestions and clear rejected actions", url: "https://github.com/acme/api/pull/5930", repo: "acme/api", author: "kevingoenadibrata", draft: false, review: "REVIEW_REQUIRED", branch: "kevin/dismiss-suggestions", updated: iso(0.5 * H) },
+  { kind: "authored", id: "#295", title: "Multi-page custom report templates", url: "https://github.com/acme/reports/pull/295", repo: "acme/reports", author: "kevingoenadibrata", draft: false, review: "CHANGES_REQUESTED", branch: "feat/custom-report-multi-page", updated: iso(6 * H) },
+  { kind: "authored", id: "#14", title: "Add a Tickets page for GitHub, Linear and ClickUp", url: "https://github.com/kevingoenadibrata/workdesk/pull/14", repo: "kevingoenadibrata/workdesk", author: "kevingoenadibrata", draft: true, review: null, branch: "tickets-page", updated: iso(50 * H) },
+];
+
 // ?many=1 adds enough tickets to page through.
 if (params.get("many")) {
   const statuses: [string, string][] = [["Todo", "#e2e2e2"], ["In Progress", "#f2c94c"], ["In Review", "#5e6ad2"], ["Backlog", "#bec2c8"]];
@@ -51,6 +59,7 @@ const connected = params.get("empty") ? [] : ["github", "linear", "clickup"];
       if (params.get("error") && args.provider === "clickup") throw "ClickUp rejected the token. Reconnect it in Settings → Integrations.";
       return TICKETS[args.provider!] ?? [];
     }
+    if (cmd === "tickets_pulls") return PULLS;
     if (cmd === "tickets_whoami") return { github: "kevingoenadibrata", linear: "Kevin G", clickup: "kevin" }[args.provider!];
     if (cmd === "tickets_connect") throw "Linear rejected the token. Reconnect it in Settings → Integrations.";
     return null;
