@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tickets Preview</title>
+    <script type="module" src="/src/ticketsPreview.ts"></script>
+    <style>
+      /* Dev-only page: the real Tickets page and Integrations settings, fed mock data. Not part of the build. */
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        background: var(--sunken);
+        color: var(--muted);
+        font: 12px var(--code);
+      }
+      .preview-bar strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+      .preview-bar select {
+        padding: 3px 6px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      #preview-host {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-bar">
+      <strong>Tickets preview</strong>
+      <label>Theme <select id="preview-theme"></select></label>
+    </div>
+    <div id="preview-host"></div>
+  </body>
+</html>

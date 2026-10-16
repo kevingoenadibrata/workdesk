@@ -29,6 +29,15 @@ interface Parsed {
   query: string;
 }
 
+/** Teleport used to pick a folder for something else, like a ticket's branch. */
+export interface PickOptions {
+  /** Shown above the input, saying what the folder is for. */
+  title?: Node | string;
+  placeholder?: string;
+  /** Folders only: no @macro or #loadout. */
+  plain?: boolean;
+}
+
 const MAX_RESULTS = 50;
 const FAVORITE_COMBO = "mod+d";
 
@@ -86,6 +95,7 @@ export class DirPicker {
   private onPick: ((dir: string, macro?: Macro) => void) | null = null;
   private onCancel: (() => void) | null = null;
   private onLoadout: ((name: string) => void) | null = null;
+  private options: PickOptions = {};
 
   constructor(private host: HTMLElement) {}
 
@@ -93,8 +103,14 @@ export class DirPicker {
     return this.root != null;
   }
 
-  async open(onPick: (dir: string, macro?: Macro) => void, onCancel: () => void, onLoadout: (name: string) => void) {
+  async open(
+    onPick: (dir: string, macro?: Macro) => void,
+    onCancel: () => void,
+    onLoadout: (name: string) => void = () => {},
+    options: PickOptions = {},
+  ) {
     if (this.root) return this.input.focus();
+    this.options = options;
     this.onPick = onPick;
     this.onCancel = onCancel;
     this.onLoadout = onLoadout;
@@ -138,12 +154,17 @@ export class DirPicker {
   private build() {
     const root = el("div", "dirpicker");
     this.input = el("input", "dirpicker-input");
-    this.input.placeholder = "Teleport to…  (~/ or / to browse, @macro to run, #loadout to open)";
+    this.input.placeholder = this.options.placeholder ?? "Teleport to…  (~/ or / to browse, @macro to run, #loadout to open)";
     this.input.spellcheck = false;
     this.input.autocomplete = "off";
     this.list = el("div", "dirpicker-list");
     this.macroBar = el("div", "dirpicker-macro");
     root.append(this.input, this.macroBar, this.list);
+    if (this.options.title) {
+      const title = el("div", "dirpicker-title");
+      title.append(this.options.title);
+      root.prepend(title);
+    }
     this.backdrop = el("div", "dirpicker-backdrop");
     this.host.append(this.backdrop, root);
     this.root = root;
@@ -224,6 +245,7 @@ export class DirPicker {
 
   private parse(): Parsed {
     const raw = this.input.value;
+    if (this.options.plain) return { loadout: null, macro: null, naming: false, prefix: "", query: raw.trim() };
     const hash = /^\s*#(\S*)/.exec(raw);
     if (hash) return { loadout: hash[1], macro: null, naming: false, prefix: hash[0], query: "" };
     const m = /^\s*@(\S*)(\s+)?/.exec(raw);
