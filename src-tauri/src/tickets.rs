@@ -43,6 +43,8 @@ pub struct Ticket {
     updated: String,
     /// A branch name the service suggests (Linear does).
     branch: Option<String>,
+    /// The description, as Markdown or plain text, cut to a few thousand characters.
+    body: String,
 }
 
 /// An open GitHub pull request the user wrote, or was asked to review.
@@ -161,6 +163,19 @@ fn str_at(v: &Value, ptr: &str) -> String {
     v.pointer(ptr).and_then(Value::as_str).unwrap_or_default().to_string()
 }
 
+/// `s`, cut at a character boundary past 8,000 bytes: plenty for an agent's brief.
+fn cut(s: String) -> String {
+    const MAX: usize = 8000;
+    if s.len() <= MAX {
+        return s;
+    }
+    let mut end = MAX;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n\n[…cut]", &s[..end])
+}
+
 fn missing(p: Provider) -> String {
     match p {
         Provider::Github => "Not connected. Add a token in Settings → Integrations, or sign in with `gh auth login`.".into(),
@@ -197,6 +212,7 @@ async fn github_tickets(token: &str) -> Result<Vec<Ticket>, String> {
                 color: None,
                 updated: str_at(i, "/updated_at"),
                 branch: None,
+                body: cut(str_at(i, "/body")),
             }
         })
         .collect())
@@ -248,7 +264,7 @@ async fn linear_tickets(token: &str) -> Result<Vec<Ticket>, String> {
     let data = linear(
         token,
         r#"{ viewer { assignedIssues(first: 100, orderBy: updatedAt, filter: { state: { type: { nin: ["completed", "canceled"] } } }) {
-            nodes { identifier title url branchName updatedAt state { name color } team { name } } } } }"#,
+            nodes { identifier title description url branchName updatedAt state { name color } team { name } } } } }"#,
     )
     .await?;
     let nodes = data.pointer("/viewer/assignedIssues/nodes").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -264,6 +280,7 @@ async fn linear_tickets(token: &str) -> Result<Vec<Ticket>, String> {
             color: n.pointer("/state/color").and_then(Value::as_str).map(str::to_string),
             updated: str_at(n, "/updatedAt"),
             branch: n["branchName"].as_str().filter(|b| !b.is_empty()).map(str::to_string),
+            body: cut(str_at(n, "/description")),
         })
         .collect())
 }
@@ -300,6 +317,7 @@ async fn clickup_tickets(token: &str) -> Result<Vec<Ticket>, String> {
                     color: t.pointer("/status/color").and_then(Value::as_str).map(str::to_string),
                     updated: str_at(&t, "/date_updated"),
                     branch: None,
+                    body: cut(str_at(&t, "/text_content")),
                 });
             }
             if body["last_page"].as_bool() != Some(false) {
@@ -375,4 +393,78 @@ pub async fn tickets_list(provider: Provider) -> Result<Vec<Ticket>, String> {
 pub async fn tickets_pulls() -> Result<Vec<PullRequest>, String> {
     let (t, _) = tauri::async_runtime::spawn_blocking(|| token(Provider::Github)).await.ok().flatten().ok_or_else(|| missing(Provider::Github))?;
     github_pulls(&t).await
+}
+
+/// The newest GitHub pull request from `branch`, whatever its state.
+#[derive(Serialize)]
+pub struct BranchPull {
+    number: u64,
+    url: String,
+    title: String,
+    /// "OPEN", "MERGED" or "CLOSED".
+    state: String,
+    draft: bool,
+}
+
+/// "owner/name" of a GitHub remote URL, in any of its forms.
+fn github_repo(remote: &str) -> Option<(String, String)> {
+    let rest = remote.trim().split_once("github.com")?.1.trim_start_matches([':', '/']);
+    let mut parts = rest.trim_end_matches('/').trim_end_matches(".git").splitn(2, '/');
+    let owner = parts.next().filter(|s| !s.is_empty())?;
+    let name = parts.next().filter(|s| !s.is_empty() && !s.contains('/'))?;
+    Some((owner.to_string(), name.to_string()))
+}
+
+/// The newest pull request from `branch` to the GitHub repo that `dir`'s
+/// origin points at; null if there's none, or origin isn't on GitHub.
+#[tauri::command]
+pub async fn tickets_branch_pull(dir: String, branch: String) -> Result<Option<BranchPull>, String> {
+    let remote = tauri::async_runtime::spawn_blocking(move || crate::git::run(&dir, &["remote", "get-url", "origin"]).ok())
+        .await
+        .ok()
+        .flatten();
+    let Some((owner, name)) = remote.as_deref().and_then(github_repo) else { return Ok(None) };
+    let (t, _) = tauri::async_runtime::spawn_blocking(|| token(Provider::Github)).await.ok().flatten().ok_or_else(|| missing(Provider::Github))?;
+    let query = r#"query($owner: String!, $name: String!, $branch: String!) {
+        repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch, first: 1, orderBy: { field: CREATED_AT, direction: DESC }) {
+            nodes { number url title state isDraft } } } }"#;
+    let req = client()
+        .post("https://api.github.com/graphql")
+        .bearer_auth(&t)
+        .json(&json!({ "query": query, "variables": { "owner": owner, "name": name, "branch": branch } }));
+    let body = send("GitHub", req).await?;
+    if let Some(err) = body["errors"].as_array().and_then(|e| e.first()) {
+        return Err(format!("GitHub: {}", str_at(err, "/message")));
+    }
+    let Some(n) = body.pointer("/data/repository/pullRequests/nodes/0") else { return Ok(None) };
+    Ok(Some(BranchPull {
+        number: n["number"].as_u64().unwrap_or_default(),
+        url: str_at(n, "/url"),
+        title: str_at(n, "/title"),
+        state: str_at(n, "/state"),
+        draft: n["isDraft"].as_bool().unwrap_or_default(),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_github_remotes() {
+        let want = Some(("acme".to_string(), "app".to_string()));
+        assert_eq!(github_repo("git@github.com:acme/app.git"), want);
+        assert_eq!(github_repo("https://github.com/acme/app"), want);
+        assert_eq!(github_repo("https://github.com/acme/app.git/"), want);
+        assert_eq!(github_repo("ssh://git@github.com/acme/app.git"), want);
+        assert_eq!(github_repo("git@gitlab.com:acme/app.git"), None);
+    }
+
+    #[test]
+    fn cuts_long_bodies_on_a_char_boundary() {
+        let s = "é".repeat(5000);
+        let out = cut(s);
+        assert!(out.ends_with("[…cut]"));
+        assert!(out.len() < 8100);
+    }
 }

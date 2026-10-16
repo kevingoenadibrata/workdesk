@@ -1,8 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Page, el } from "./page";
+import { el } from "./page";
 import { localServers, type Listener } from "./pty";
-import { ArrowUpRight, Copy, EthernetPort, X, icon } from "./icons";
-import { kbdFor } from "./kbd";
+import { ArrowUpRight, Copy, X, icon } from "./icons";
 import { panesInOrder } from "./monitor";
 import type { Workspace } from "./workspace";
 import type { TermSession } from "./terminal";
@@ -113,68 +112,27 @@ const SECTIONS: { origin: Origin; title: string }[] = [
   { origin: "outside", title: "Outside Workdesk Servers" },
 ];
 
-/** Ports on the faceplate in the page header. */
-const FACEPLATE_PORTS = 8;
 
-/** A row for every local web server; click one to open it in the browser. */
-export class ServersPage extends Page {
-  readonly title = "Local Servers";
+/** The servers' rows, in sections for Workdesk's and outside ones, as Home's drawer shows them. */
+export class ServerList {
+  readonly root = el("div", "server-list");
   private servers: Server[] = [];
-  private list: HTMLElement | null = null;
-  private faceplate: HTMLElement | null = null;
   private cards = new Map<string, HTMLElement>();
   private sections = new Map<Origin, HTMLElement>();
 
   constructor(
-    host: HTMLElement,
     private onJump: (session: TermSession) => void,
     private onDismiss: (key: string) => void = () => {},
     private open_: (url: string) => void = (url) => void openUrl(url),
-  ) {
-    super(host);
-  }
-
-  protected build(body: HTMLElement): HTMLElement | null {
-    body.classList.add("monitor-body", "servers-body");
-    const title = body.querySelector(".page-title")!;
-    const head = el("header", "monitor-head");
-    const text = el("div", "monitor-head-text");
-    title.replaceWith(head);
-    text.append(
-      title,
-      el("p", "page-intro monitor-intro", "Every web server running on this machine, and the tab that started it. Click one to open it in your browser."),
-    );
-    this.faceplate = el("div", "faceplate");
-    this.faceplate.setAttribute("aria-hidden", "true");
-    for (let i = 0; i < FACEPLATE_PORTS; i++) {
-      const port = el("span", "faceplate-port");
-      port.append(el("span", "faceplate-led"), el("span", "faceplate-socket"));
-      this.faceplate.append(port);
-    }
-    head.append(this.faceplate, text);
-    this.list = el("div", "server-list");
-    this.cards.clear();
-    this.sections.clear();
-    body.append(this.list);
-    this.render();
-    return null;
-  }
+  ) {}
 
   update(servers: Server[]) {
     this.servers = servers;
-    if (this.isOpen) this.render();
+    this.render();
   }
 
   private render() {
-    const list = this.list;
-    if (!list) return;
-    const live = this.servers.filter((s) => s.live).length;
-    // Workdesk's servers light the first ports, then the outside ones, in teal.
-    const ours = this.servers.filter((s) => s.live && s.session).length;
-    this.faceplate?.querySelectorAll(".faceplate-port").forEach((port, i) => {
-      port.classList.toggle("lit", i < live);
-      port.classList.toggle("outside", i >= ours);
-    });
+    const list = this.root;
     if (this.servers.length === 0) {
       this.cards.clear();
       this.sections.clear();
@@ -356,14 +314,8 @@ export class LocalServers {
   private polling = false;
   private listeners = new Set<(servers: Server[]) => void>();
 
-  constructor(
-    private ws: Workspace,
-    private slot: HTMLElement,
-    private page: ServersPage,
-  ) {
+  constructor(private ws: Workspace) {
     ws.onChange(() => this.refreshTitles());
-    Page.onChange(() => this.renderRow());
-    this.renderRow();
   }
 
   /** Every server from the last poll, live and stopped, in sidebar order. */
@@ -388,7 +340,6 @@ export class LocalServers {
   dismiss(key: string) {
     this.dismissed.add(key);
     this.servers = this.servers.filter((s) => s.key !== key);
-    this.page.update(this.servers);
     this.emit();
   }
 
@@ -453,9 +404,7 @@ export class LocalServers {
           return { key, ...s, tabTitle: pane?.tabTitle ?? null, color: pane?.color ?? null };
         })
         .sort((x, y) => order(x.session) - order(y.session) || x.port - y.port);
-      this.page.update(this.servers);
-      this.emit();
-      this.renderRow();
+        this.emit();
     } finally {
       this.polling = false;
     }
@@ -470,32 +419,6 @@ export class LocalServers {
         const pane = s.session && panes.get(s.session);
         return pane ? { ...s, tabTitle: pane.tabTitle, color: pane.color } : s;
       });
-    this.page.update(this.servers);
     this.emit();
-    this.renderRow();
-  }
-
-  /** The Local Servers row: shown while any server is live, or while the page is open. */
-  private renderRow() {
-    const open = Page.current === this.page;
-    const live = this.servers.filter((s) => s.live).length;
-    if (live === 0 && !open) {
-      this.slot.replaceChildren();
-      return;
-    }
-    const row = el("button", "tab monitor-row servers-row");
-    row.type = "button";
-    if (open) row.classList.add("active");
-    row.dataset.tip = `Local Servers · ${live} running`;
-    const glyph = el("span", "monitor-icon servers-icon");
-    glyph.append(icon(EthernetPort, 14));
-    const hint = el("span", "tab-hint");
-    hint.append(kbdFor("openServers"));
-    row.append(glyph, el("span", "tab-title", "Local Servers"), el("span", "monitor-count", String(live)), hint);
-    row.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.page.toggle();
-    });
-    this.slot.replaceChildren(row);
   }
 }

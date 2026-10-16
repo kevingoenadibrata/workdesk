@@ -15,9 +15,7 @@ export type Action =
   | "openHome"
   | "openSettings"
   | "openShortcuts"
-  | "openMonitor"
   | "openServers"
-  | "openTickets"
   | "searchTabs"
   | "closeTab"
   | "splitRight"
@@ -59,9 +57,7 @@ export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+shift+h": "openHome",
   "mod+,": "openSettings",
   "mod+/": "openShortcuts",
-  "mod+shift+m": "openMonitor",
   "mod+shift+l": "openServers",
-  "mod+shift+i": "openTickets",
   "mod+f": "searchTabs",
   "mod+w": "closeTab",
   "mod+d": "splitRight",
@@ -151,9 +147,7 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
       ["toggleSidebar", "Show or hide sidebar"],
       ["collapseSidebar", "Collapse sidebar to icons"],
       ["openHome", "Open Home"],
-      ["openMonitor", "Open Agent Monitor"],
-      ["openServers", "Open Local Servers"],
-      ["openTickets", "Open Tickets"],
+      ["openServers", "Show local servers"],
       ["openShortcuts", "Shortcuts"],
       ["openSettings", "Settings"],
     ],

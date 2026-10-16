@@ -4,6 +4,8 @@
 // ?error=1 a rejected token.
 import "./styles.css";
 import { TicketsPage, ticketStore, type PullRequest, type Ticket } from "./tickets";
+import { RunStore, type Run } from "./runs";
+import type { Agent } from "./monitor";
 import { Settings } from "./settings";
 import { THEMES, currentTheme, loadTheme, setTheme } from "./themes";
 
@@ -77,6 +79,33 @@ const click = params.get("click");
 if (click) setTimeout(() => document.querySelectorAll<HTMLElement>(click)[Number(params.get("nth") ?? 0)]?.click(), 700);
 
 loadTheme();
+// Tickets Claude is working on: ?runs=0 hides them.
+const runs = new RunStore(() => {}, false);
+if (params.get("runs") !== "0") {
+  const run = (provider: Ticket["provider"], id: string, pull: Run["pull"] = null): Run => ({
+    key: `${provider}:${id}`,
+    ticket: { provider, id, title: "", url: "" },
+    path: `/Users/me/.workdesk/worktrees/app/${id}`,
+    root: "/Users/me/app",
+    repo: "app",
+    branch: id.toLowerCase(),
+    promptFile: "",
+    sessionId: "",
+    startedAt: Date.now(),
+    pull,
+  });
+  const mocks = [
+    run("linear", "ENG-421"),
+    run("github", "#142"),
+    run("linear", "ENG-409", { number: 212, url: "https://github.com/acme/app/pull/212", title: "Move billing webhooks to the queue", state: "OPEN", draft: false }),
+    run("linear", "DES-88", { number: 198, url: "https://github.com/acme/app/pull/198", title: "Onboarding empty states", state: "MERGED", draft: false }),
+    run("github", "#57"),
+  ];
+  for (const r of mocks) runs.add(r);
+  const agent = (r: Run, status: Agent["status"]) => ({ harness: "claude", status, session: { cwd: r.path, startCwd: r.path } }) as unknown as Agent;
+  runs.setAgents([agent(mocks[0], "working"), agent(mocks[1], "waiting")]);
+}
+
 const host = document.getElementById("preview-host")!;
 if (params.get("settings")) {
   try {
@@ -90,6 +119,12 @@ if (params.get("settings")) {
     async (_t, branch) => `Created ${branch} in workdesk`,
     () => console.log("settings"),
     (url) => console.log("open", url),
+    {
+      store: runs,
+      start: async (t, branch) => `Made a worktree for ${branch} in workdesk (from origin/main) for ${t.id}`,
+      open: (run) => console.log("open run", run.key),
+      cleanup: async (run) => `Removed the worktree and ${run.branch}`,
+    },
   ).open();
 }
 void ticketStore.refresh();

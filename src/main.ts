@@ -7,9 +7,11 @@ import { Sidebar } from "./sidebar";
 import { DirPicker } from "./dirpicker";
 import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
-import { AgentMonitor, MonitorPage } from "./monitor";
-import { LocalServers, ServersPage, serverUrl } from "./servers";
-import { TicketsPage, TicketsRow, ticketStore } from "./tickets";
+import { AgentMonitor } from "./monitor";
+import { LocalServers, serverUrl } from "./servers";
+import { ticketStore, type Ticket } from "./tickets";
+import { buildPrompt, rememberRepo, repoFor, runKey, runStore, runsApi, shellQuote, type Run } from "./runs";
+import { panesInOrder } from "./monitor";
 import { HomePage, HomeRow, liveHomeSource } from "./home";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Page } from "./page";
@@ -47,46 +49,30 @@ const focusTerminal = () => ws.activeTab?.session.term.focus();
 const settings = new Settings($("#terminals"));
 settings.onOpenLoadout = deployLoadout;
 const shortcutsPage = new ShortcutsPage($("#terminals"));
-const monitorPage = new MonitorPage($("#terminals"), (session) => {
-  ws.reveal(session);
-  Page.closeAll();
-});
-const monitor = new AgentMonitor(ws, $("#monitor-slot"), monitorPage);
-const serversPage = new ServersPage(
-  $("#terminals"),
-  (session) => {
-    ws.reveal(session);
-    Page.closeAll();
-  },
-  (key) => servers.dismiss(key),
-);
-const servers = new LocalServers(ws, $("#servers-slot"), serversPage);
-const ticketsPage = new TicketsPage($("#terminals"), ticketStore, startTicketBranch, () => settings.showSubPage("integrations"));
-new TicketsRow(ticketStore, $("#tickets-slot"), ticketsPage);
+const monitor = new AgentMonitor(ws);
+const servers = new LocalServers(ws);
 const homePage = new HomePage(
   $("#terminals"),
-  liveHomeSource(ws, monitor, servers, ticketStore, {
-    openTab: (id) => {
+  liveHomeSource(ticketStore, runStore, monitor, servers, {
+    handOver: startRun,
+    startBranch: startTicketBranch,
+    openRun,
+    cleanup: cleanupRun,
+    jumpTo: (agent) => {
+      ws.reveal(agent.session);
       Page.closeAll();
-      ws.activate(id);
     },
-    jumpToAgent: (session) => {
+    openUrl: (url) => void openUrl(url),
+    openSettings: () => settings.showSubPage("integrations"),
+    openServer: (server) => void openUrl(serverUrl(server)),
+    jumpToServer: (session) => {
       ws.reveal(session);
       Page.closeAll();
     },
-    openTicket: (ticket) => void openUrl(ticket.url),
-    openServer: (server) => void openUrl(serverUrl(server)),
-    openPull: (pull) => void openUrl(pull.url),
-    teleport: () => newTabIn(),
-    open: (page) => {
-      if (page === "tickets") ticketsPage.open();
-      else if (page === "monitor") monitorPage.open();
-      else if (page === "servers") serversPage.open();
-      else settings.showSubPage("integrations");
-    },
+    dismissServer: (key) => servers.dismiss(key),
   }),
 );
-new HomeRow($("#home-slot"), homePage);
+new HomeRow($("#home-slot"), homePage, monitor);
 
 /**
  * Asks which folder's repo to start `branch` in (Teleport, folders only),
@@ -117,6 +103,91 @@ function startTicketBranch(_ticket: unknown, branch: string): Promise<string> {
     );
   });
 }
+/** Asks which folder holds `ticket`'s repo (Teleport, folders only). Resolves undefined if dismissed. */
+function pickRepo(ticket: Ticket): Promise<string | undefined> {
+  const title = document.createElement("span");
+  const id = document.createElement("code");
+  id.textContent = ticket.id;
+  title.append("Work on ", id, " in which repo?");
+  return new Promise((resolve) => {
+    void dirPicker.open(
+      (dir) => resolve(dir),
+      () => resolve(undefined),
+      undefined,
+      { title, placeholder: "Pick the repo's folder…  (~/ or / to browse)", plain: true },
+    );
+  });
+}
+
+/**
+ * Hands `ticket` to Claude Code: makes a worktree for `branch` in the
+ * ticket's repo (asked for once per project), then opens a tab there running
+ * Claude with the ticket as its brief. Flow stays open, so the next ticket
+ * can follow.
+ */
+async function startRun(ticket: Ticket, branch: string): Promise<string> {
+  const known = runStore.get(runKey(ticket));
+  if (known) {
+    openRun(known);
+    return "";
+  }
+  const remembered = repoFor(ticket);
+  const dir = remembered ?? (await pickRepo(ticket));
+  if (!dir) return "";
+  let started;
+  try {
+    started = await runsApi.start(dir, branch, buildPrompt(ticket, branch));
+  } catch (e) {
+    // A bad pick shouldn't stick.
+    if (/isn't in a git repo|bare repo/.test(String(e))) rememberRepo(ticket, undefined);
+    throw e;
+  }
+  rememberRepo(ticket, dir);
+  const run: Run = {
+    key: runKey(ticket),
+    ticket: { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url },
+    path: started.path,
+    root: started.root,
+    repo: started.repo,
+    branch,
+    promptFile: started.prompt_file,
+    sessionId: crypto.randomUUID(),
+    startedAt: Date.now(),
+    pull: null,
+  };
+  runStore.add(run);
+  const claude = `claude --session-id ${run.sessionId} --name ${shellQuote(ticket.id)} --permission-mode auto "$(cat ${shellQuote(run.promptFile)})"`;
+  const tab = ws.newTab(undefined, run.path, [claude]);
+  ws.renameTab(tab.id, ticket.id);
+  const extras = [started.base && `from ${started.base}`, started.copied.length && `copied ${started.copied.join(", ")}`].filter(Boolean);
+  return `${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}${extras.length ? ` (${extras.join("; ")})` : ""}`;
+}
+
+/** The pane working in `run`'s worktree: the one running Claude, else any shell there. */
+function runPane(run: Run) {
+  const agent = runStore.agentFor(run);
+  if (agent) return agent.session;
+  const inside = (d: string) => d === run.path || d.startsWith(run.path + "/");
+  return panesInOrder(ws).find((p) => inside(p.session.cwd || p.session.startCwd))?.session;
+}
+
+/** Goes to `run`'s tab, or picks its Claude session back up in a new one. */
+function openRun(run: Run) {
+  Page.closeAll();
+  const pane = runPane(run);
+  if (pane) return ws.reveal(pane);
+  const tab = ws.newTab(undefined, run.path, [`claude --resume ${run.sessionId}`]);
+  ws.renameTab(tab.id, run.ticket.id);
+}
+
+async function cleanupRun(run: Run): Promise<string> {
+  if (runPane(run)) throw `Close the tab working in ${run.path} first.`;
+  const merged = run.pull?.state === "MERGED";
+  const msg = await runsApi.remove(run.path, run.root, run.branch, merged, run.promptFile);
+  runStore.delete(run.key);
+  return msg;
+}
+
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
 const layoutPicker = new LayoutPicker($("#terminals"), ws);
@@ -290,7 +361,7 @@ function showSideTip(e: MouseEvent) {
   sideTip.style.top = `${r.top + r.height / 2}px`;
   sideTip.classList.add("visible");
 }
-for (const sel of ["#tablist", "#home-slot", "#monitor-slot", "#servers-slot", "#tickets-slot"]) {
+for (const sel of ["#tablist", "#home-slot"]) {
   $(sel).addEventListener("mouseover", showSideTip);
   $(sel).addEventListener("mouseleave", hideSideTip);
 }
@@ -384,9 +455,7 @@ const handlers: Record<Action, () => void> = {
   openHome: () => homePage.toggle(),
   openSettings: () => settings.toggle(),
   openShortcuts: () => shortcutsPage.toggle(),
-  openMonitor: () => monitorPage.toggle(),
-  openServers: () => serversPage.toggle(),
-  openTickets: () => ticketsPage.toggle(),
+  openServers: () => homePage.showServers(),
   searchTabs,
   closeTab: close,
   splitRight: () => void split("right"),
@@ -430,9 +499,7 @@ const PAGE_SAFE = new Set<Action>([
   "openHome",
   "openSettings",
   "openShortcuts",
-  "openMonitor",
   "openServers",
-  "openTickets",
   "toggleSidebar",
   "collapseSidebar",
   "newTabIn",
@@ -527,8 +594,11 @@ applyAppIcon();
 ws.startTitlePolling();
 ws.startGitPolling();
 monitor.start();
+runStore.start((fn) => monitor.onChange(fn));
 servers.start();
 ticketStore.start();
+// Start on Home; last time's tabs are restored behind it.
+homePage.open();
 
 // The tour runs in its own window over the whole display (Workdesk › Restart
 // Onboarding opens it too). A theme picked there repaints this window, and
