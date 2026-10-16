@@ -1,6 +1,7 @@
 import { el } from "./page";
 import { gitDiff } from "./pty";
-import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, FileCode, RotateCcw, Rows2, X, icon } from "./icons";
+import { Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, Ellipsis, FileCode, RotateCcw, Rows2, X, icon } from "./icons";
+import { showMenu } from "./menu";
 
 // ---- parsing `git diff` ----
 
@@ -394,9 +395,25 @@ function bar(added: number, removed: number): HTMLElement {
   return wrap;
 }
 
+const WIDTH_KEY = "workdesk.diffPanel.width";
+/** Share of the pane's width the docked panel takes. */
+const MIN_SHARE = 0.25;
+const MAX_SHARE = 0.85;
+
+function loadShare(): number {
+  try {
+    const f = Number(localStorage.getItem(WIDTH_KEY));
+    if (f >= MIN_SHARE && f <= MAX_SHARE) return f;
+  } catch {
+    // Default it is.
+  }
+  return 0.55;
+}
+
 /**
- * Every change since the last commit in one repo, in a sheet that slides in
- * from the right over the terminals. Opened from a pane's +/- card.
+ * Every change since the last commit in one repo. Docked on the right of the
+ * pane whose +/- card opened it (`host` is the pane's body), or, with no host,
+ * a sheet that slides in over the window (the dev preview).
  */
 export class DiffSheet {
   private dir = "";
@@ -424,8 +441,10 @@ export class DiffSheet {
   private opening = 0;
   /** Called after the sheet closes, e.g. to put focus back in the terminal. */
   onClose = () => {};
+  /** Called when the docked panel's width changes, so the terminal can refit. */
+  onResize = () => {};
 
-  constructor() {
+  constructor(private host?: HTMLElement) {
     window.addEventListener("focus", () => this.isOpen && void this.refresh());
   }
 
@@ -467,6 +486,11 @@ export class DiffSheet {
     this.opening++;
     // Reopening starts large files hidden again.
     this.shownLarge.clear();
+    if (this.host) {
+      root.remove();
+      this.onClose();
+      return;
+    }
     const sheet = root.querySelector<HTMLElement>(".diff-sheet")!;
     const scrim = root.querySelector<HTMLElement>(".diff-scrim")!;
     root.style.pointerEvents = "none";
@@ -485,6 +509,7 @@ export class DiffSheet {
   }
 
   private build() {
+    if (this.host) return this.buildDocked(this.host);
     const root = el("div", "diff-overlay");
     const scrim = el("div", "diff-scrim");
     scrim.addEventListener("click", () => this.close());
@@ -518,12 +543,67 @@ export class DiffSheet {
     scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms(SLIDE_IN.duration), easing: SLIDE_IN.easing });
   }
 
+  /** The panel inside a pane, right of its terminal, resized from its left edge. */
+  private buildDocked(host: HTMLElement) {
+    const sheet = el("aside", "diff-sheet docked");
+    sheet.tabIndex = -1;
+    sheet.setAttribute("aria-label", "Changes");
+    sheet.style.width = `${loadShare() * 100}%`;
+    sheet.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.close();
+    });
+    const resizer = el("div", "diff-resizer");
+    resizer.addEventListener("mousedown", (e) => this.startResize(e, sheet, host));
+    this.content = el("div", "diff-content");
+    const scroller = el("div", "diff-scroll");
+    scroller.append(this.content);
+    scroller.addEventListener("scroll", () => this.scheduleDraw(), { passive: true });
+    new ResizeObserver(() => this.scheduleDraw()).observe(scroller);
+    sheet.append(resizer, this.buildHead(), scroller);
+    host.append(sheet);
+    this.root = sheet;
+    this.render();
+    this.onResize();
+    sheet.focus({ preventScroll: true });
+  }
+
+  private startResize(e: MouseEvent, sheet: HTMLElement, host: HTMLElement) {
+    e.preventDefault();
+    const total = host.getBoundingClientRect().width;
+    const startX = e.clientX;
+    const startW = sheet.getBoundingClientRect().width;
+    let share = startW / total;
+    document.body.classList.add("resizing");
+    const onMove = (m: MouseEvent) => {
+      share = Math.max(MIN_SHARE, Math.min(MAX_SHARE, (startW - (m.clientX - startX)) / total));
+      sheet.style.width = `${share * 100}%`;
+      this.onResize();
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("resizing");
+      try {
+        localStorage.setItem(WIDTH_KEY, String(share));
+      } catch {
+        // Not remembered past this session.
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   private buildHead(): HTMLElement {
     const head = el("header", "diff-head");
-    // It sits where the title bar was, so it moves the window like one.
-    head.dataset.tauriDragRegion = "";
     const text = el("div", "diff-head-text");
-    text.dataset.tauriDragRegion = "";
+    if (!this.host) {
+      // It sits where the title bar was, so it moves the window like one.
+      head.dataset.tauriDragRegion = "";
+      text.dataset.tauriDragRegion = "";
+    }
     text.append(
       el("h2", "diff-title", "Changes"),
       el("span", "diff-meta-repo", this.repo),
@@ -539,14 +619,8 @@ export class DiffSheet {
       b.setAttribute("role", "radio");
       b.setAttribute("aria-checked", String(this.view === mode));
       b.append(icon(node, 13), label);
-      b.addEventListener("click", () => {
-        this.view = mode;
-        try {
-          localStorage.setItem(VIEW_KEY, mode);
-        } catch {}
-        toggle.querySelectorAll("button").forEach((o) => o.setAttribute("aria-checked", String(o === b)));
-        this.render();
-      });
+      b.dataset.mode = mode;
+      b.addEventListener("click", () => this.setView(mode));
       toggle.append(b);
     }
     const button = (node: Parameters<typeof icon>[0], label: string, run: () => void) => {
@@ -558,15 +632,54 @@ export class DiffSheet {
       return b;
     };
     this.foldButton = el("button", "diff-fold");
-    this.foldButton.addEventListener("click", () => {
-      if (this.allCollapsed) this.collapsed.clear();
-      else for (const f of this.files) this.collapsed.add(f.path);
-      this.render();
-    });
+    this.foldButton.addEventListener("click", () => this.toggleFold());
     this.syncFold();
     tools.append(this.foldButton, toggle, button(RotateCcw, "Refresh", () => void this.refresh()), button(X, "Close", () => this.close()));
-    head.append(text, tools);
+    // Docked, the pane already says which repo and branch it is. Too narrow
+    // for the buttons (see the container query), they all move into a ⋯ menu.
+    if (this.host) {
+      const more = button(Ellipsis, "More", () => {
+        const r = more.getBoundingClientRect();
+        const menu = showMenu(r.right, r.bottom + 4, this.menuItems());
+        // Right-aligned under the button.
+        menu.style.left = `${Math.max(4, r.right - menu.offsetWidth)}px`;
+      });
+      more.classList.add("diff-more");
+      head.append(tools, more);
+    } else head.append(text, tools);
     return head;
+  }
+
+  private menuItems() {
+    const expand = this.allCollapsed;
+    const view = (mode: ViewMode, node: Parameters<typeof icon>[0], label: string) => ({
+      label,
+      icon: this.view === mode ? Check : node,
+      action: () => this.setView(mode),
+    });
+    return [
+      ...(this.files.length ? [{ label: expand ? "Expand all" : "Collapse all", icon: expand ? ChevronsUpDown : ChevronsDownUp, action: () => this.toggleFold() }, { separator: true as const }] : []),
+      view("unified", Rows2, "Unified"),
+      view("split", Columns2, "Split"),
+      { separator: true as const },
+      { label: "Refresh", icon: RotateCcw, action: () => void this.refresh() },
+      { label: "Close", icon: X, action: () => this.close() },
+    ];
+  }
+
+  private setView(mode: ViewMode) {
+    this.view = mode;
+    try {
+      localStorage.setItem(VIEW_KEY, mode);
+    } catch {}
+    this.root?.querySelectorAll<HTMLElement>(".diff-toggle-option").forEach((o) => o.setAttribute("aria-checked", String(o.dataset.mode === mode)));
+    this.render();
+  }
+
+  private toggleFold() {
+    if (this.allCollapsed) this.collapsed.clear();
+    else for (const f of this.files) this.collapsed.add(f.path);
+    this.render();
   }
 
   private get allCollapsed() {
@@ -741,15 +854,4 @@ export class DiffSheet {
     });
   }
 
-}
-
-let sheet: DiffSheet | null = null;
-
-/** Lets panes open the diff sheet, which main.ts creates. */
-export function registerDiffSheet(s: DiffSheet) {
-  sheet = s;
-}
-
-export function showDiff(dir: string, repo: string, branch: string) {
-  void sheet?.show(dir, repo, branch);
 }

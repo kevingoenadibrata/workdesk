@@ -9,7 +9,6 @@ import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor, MonitorPage } from "./monitor";
 import { LocalServers, ServersPage } from "./servers";
-import { DiffSheet, registerDiffSheet } from "./diffview";
 import { TicketsPage, TicketsRow, ticketStore } from "./tickets";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
@@ -92,11 +91,6 @@ function startTicketBranch(_ticket: unknown, branch: string): Promise<string> {
     );
   });
 }
-const diffSheet = new DiffSheet();
-diffSheet.onClose = () => {
-  if (!Page.current) focusTerminal();
-};
-registerDiffSheet(diffSheet);
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
 const layoutPicker = new LayoutPicker($("#terminals"), ws);
@@ -393,6 +387,7 @@ const handlers: Record<Action, () => void> = {
   resetZoom,
   maximizePane: () => ws.toggleMaximized(),
   arrangePanes: () => layoutPicker.open(),
+  toggleFileTree: () => ws.activeTab?.session.toggleTree(),
   goToTab1: () => ws.activateIndex(1),
   goToTab2: () => ws.activateIndex(2),
   goToTab3: () => ws.activateIndex(3),
@@ -446,7 +441,6 @@ ws.onChange(updateTitle);
 // A page takes the active spot: its sidebar button lights up and no tab does.
 Page.onChange(() => {
   const page = Page.current;
-  if (page) diffSheet.close();
   sidebar.setShowActive(!page);
   $("#open-settings").classList.toggle("active", page === settings);
   $("#open-shortcuts").classList.toggle("active", page === shortcutsPage);
