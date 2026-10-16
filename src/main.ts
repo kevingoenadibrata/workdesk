@@ -8,8 +8,10 @@ import { DirPicker } from "./dirpicker";
 import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor, MonitorPage } from "./monitor";
-import { LocalServers, ServersPage } from "./servers";
+import { LocalServers, ServersPage, serverUrl } from "./servers";
 import { TicketsPage, TicketsRow, ticketStore } from "./tickets";
+import { HomePage, HomeRow, liveHomeSource } from "./home";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
@@ -61,6 +63,30 @@ const serversPage = new ServersPage(
 const servers = new LocalServers(ws, $("#servers-slot"), serversPage);
 const ticketsPage = new TicketsPage($("#terminals"), ticketStore, startTicketBranch, () => settings.showSubPage("integrations"));
 new TicketsRow(ticketStore, $("#tickets-slot"), ticketsPage);
+const homePage = new HomePage(
+  $("#terminals"),
+  liveHomeSource(ws, monitor, servers, ticketStore, {
+    openTab: (id) => {
+      Page.closeAll();
+      ws.activate(id);
+    },
+    jumpToAgent: (session) => {
+      ws.reveal(session);
+      Page.closeAll();
+    },
+    openTicket: (ticket) => void openUrl(ticket.url),
+    openServer: (server) => void openUrl(serverUrl(server)),
+    openPull: (pull) => void openUrl(pull.url),
+    teleport: () => newTabIn(),
+    open: (page) => {
+      if (page === "tickets") ticketsPage.open();
+      else if (page === "monitor") monitorPage.open();
+      else if (page === "servers") serversPage.open();
+      else settings.showSubPage("integrations");
+    },
+  }),
+);
+new HomeRow($("#home-slot"), homePage);
 
 /**
  * Asks which folder's repo to start `branch` in (Teleport, folders only),
@@ -264,7 +290,7 @@ function showSideTip(e: MouseEvent) {
   sideTip.style.top = `${r.top + r.height / 2}px`;
   sideTip.classList.add("visible");
 }
-for (const sel of ["#tablist", "#monitor-slot", "#servers-slot", "#tickets-slot"]) {
+for (const sel of ["#tablist", "#home-slot", "#monitor-slot", "#servers-slot", "#tickets-slot"]) {
   $(sel).addEventListener("mouseover", showSideTip);
   $(sel).addEventListener("mouseleave", hideSideTip);
 }
@@ -355,6 +381,7 @@ $("#tablist").addEventListener(
 const handlers: Record<Action, () => void> = {
   newTab: () => void newTab(),
   newTabIn,
+  openHome: () => homePage.toggle(),
   openSettings: () => settings.toggle(),
   openShortcuts: () => shortcutsPage.toggle(),
   openMonitor: () => monitorPage.toggle(),
@@ -400,6 +427,7 @@ const handlers: Record<Action, () => void> = {
 };
 /** Actions that work while a page is open; every other one first goes back to the terminals. */
 const PAGE_SAFE = new Set<Action>([
+  "openHome",
   "openSettings",
   "openShortcuts",
   "openMonitor",

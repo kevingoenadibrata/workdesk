@@ -12,6 +12,7 @@ export function isModClick(e: MouseEvent): boolean {
 export type Action =
   | "newTab"
   | "newTabIn"
+  | "openHome"
   | "openSettings"
   | "openShortcuts"
   | "openMonitor"
@@ -55,6 +56,7 @@ export type Action =
 export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+t": "newTab",
   "mod+shift+t": "newTabIn",
+  "mod+shift+h": "openHome",
   "mod+,": "openSettings",
   "mod+/": "openShortcuts",
   "mod+shift+m": "openMonitor",
@@ -148,6 +150,7 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
     actions: [
       ["toggleSidebar", "Show or hide sidebar"],
       ["collapseSidebar", "Collapse sidebar to icons"],
+      ["openHome", "Open Home"],
       ["openMonitor", "Open Agent Monitor"],
       ["openServers", "Open Local Servers"],
       ["openTickets", "Open Tickets"],

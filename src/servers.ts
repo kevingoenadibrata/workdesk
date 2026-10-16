@@ -354,6 +354,7 @@ export class LocalServers {
   /** Stopped servers taken off the list; one that comes back shows again. */
   private dismissed = new Set<string>();
   private polling = false;
+  private listeners = new Set<(servers: Server[]) => void>();
 
   constructor(
     private ws: Workspace,
@@ -365,6 +366,20 @@ export class LocalServers {
     this.renderRow();
   }
 
+  /** Every server from the last poll, live and stopped, in sidebar order. */
+  get current(): Server[] {
+    return this.servers;
+  }
+
+  /** Called with the servers whenever the list changes. */
+  onChange(fn: (servers: Server[]) => void) {
+    this.listeners.add(fn);
+  }
+
+  private emit() {
+    for (const fn of this.listeners) fn(this.servers);
+  }
+
   start(intervalMs = 2000) {
     void this.poll();
     setInterval(() => void this.poll(), intervalMs);
@@ -374,6 +389,7 @@ export class LocalServers {
     this.dismissed.add(key);
     this.servers = this.servers.filter((s) => s.key !== key);
     this.page.update(this.servers);
+    this.emit();
   }
 
   private async poll() {
@@ -438,6 +454,7 @@ export class LocalServers {
         })
         .sort((x, y) => order(x.session) - order(y.session) || x.port - y.port);
       this.page.update(this.servers);
+      this.emit();
       this.renderRow();
     } finally {
       this.polling = false;
@@ -454,6 +471,7 @@ export class LocalServers {
         return pane ? { ...s, tabTitle: pane.tabTitle, color: pane.color } : s;
       });
     this.page.update(this.servers);
+    this.emit();
     this.renderRow();
   }
 

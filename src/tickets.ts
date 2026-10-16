@@ -106,7 +106,7 @@ export function updatedAt(t: { updated: string }): number {
 }
 
 /** "3m", "5h", "2d", "4w", or a date for anything older. */
-function ago(ms: number, now = Date.now()): string {
+export function ago(ms: number, now = Date.now()): string {
   const m = Math.max(0, Math.floor((now - ms) / 60000));
   if (m < 1) return "now";
   if (m < 60) return `${m}m`;
@@ -949,7 +949,7 @@ export class TicketsPage extends Page {
 }
 
 /** What a pull request is waiting on, and its color. */
-function pullStatus(p: PullRequest): [string, string] {
+export function pullStatus(p: PullRequest): [string, string] {
   if (p.draft) return ["Draft", "var(--muted)"];
   switch (p.review) {
     case "APPROVED":
