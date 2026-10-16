@@ -30,6 +30,7 @@ export {
   House,
   Maximize2,
   Minimize2,
+  Orbit,
   PanelLeftClose,
   PanelLeftOpen,
   Package,

@@ -9,7 +9,7 @@ import { logLines } from "./monitorSettings";
 import type { TermSession } from "./terminal";
 import { UsagePanel, liveUsage, type UsageSource } from "./usage";
 
-const HARNESS_NAMES: Record<AgentInfo["harness"], string> = {
+export const HARNESS_NAMES: Record<AgentInfo["harness"], string> = {
   claude: "Claude Code",
   codex: "Codex",
   opencode: "opencode",
@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<AgentStatus, string> = {
 };
 
 /** One word each for the badge under the avatar, whose width the longest of these sets. */
-const BADGE_LABELS: Record<AgentStatus, string> = {
+export const BADGE_LABELS: Record<AgentStatus, string> = {
   thinking: "Thinking",
   working: "Working",
   waiting: "Waiting",
@@ -121,7 +121,7 @@ const SECTIONS: { key: Section; title: string }[] = [
   { key: "idle", title: "Idle" },
 ];
 
-function sectionOf(a: Agent): Section {
+export function sectionOf(a: Agent): Section {
   if (needsYou(a)) return "needs";
   return a.status === "idle" ? "idle" : "active";
 }
@@ -130,7 +130,7 @@ function sectionOf(a: Agent): Section {
 const HAPPY_MS = 6000;
 const SLEEP_MS = 10 * 60_000;
 
-function faceOf(a: Agent, now: number): BotFace {
+export function faceOf(a: Agent, now: number): BotFace {
   switch (a.status) {
     case "thinking":
       return "think";
@@ -373,6 +373,7 @@ export class AgentMonitor {
   /** Status, since-when and the status before, per pane, so cards can say how long. */
   private seen = new Map<TermSession, { status: AgentStatus; since: number; from?: AgentStatus }>();
   private polling = false;
+  private listeners = new Set<(agents: Agent[]) => void>();
 
   constructor(
     private ws: Workspace,
@@ -383,6 +384,20 @@ export class AgentMonitor {
     ws.onChange(() => this.refreshTitles());
     Page.onChange(() => this.renderRow());
     this.renderRow();
+  }
+
+  /** The agents found by the last poll, in sidebar order. */
+  get current(): Agent[] {
+    return this.agents;
+  }
+
+  /** Called with the agents after every poll, and when tab titles change. */
+  onChange(fn: (agents: Agent[]) => void) {
+    this.listeners.add(fn);
+  }
+
+  private emit() {
+    for (const fn of this.listeners) fn(this.agents);
   }
 
   start(intervalMs = 1500) {
@@ -418,6 +433,7 @@ export class AgentMonitor {
       this.agents = agents;
       this.page.update(agents);
       this.renderRow();
+      this.emit();
     } finally {
       this.polling = false;
     }
@@ -431,6 +447,7 @@ export class AgentMonitor {
       .map((a) => ({ ...a, tabTitle: panes.get(a.session)!.tabTitle, color: panes.get(a.session)!.color }));
     this.page.update(this.agents);
     this.renderRow();
+    this.emit();
   }
 
   /** The Monitor row: shown while agents run, or while the page is open. */
