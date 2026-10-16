@@ -86,6 +86,11 @@ export function gitCheckout(dir: string, branch: string, create = false): Promis
   return invoke("git_checkout", { dir, branch, create });
 }
 
+/** The patch of everything changed since HEAD in the repo `dir` is in. */
+export function gitDiff(dir: string): Promise<string> {
+  return invoke("git_diff", { dir });
+}
+
 /** A process serving HTTP on a local port. */
 export interface Listener {
   port: number;

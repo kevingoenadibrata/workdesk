@@ -7,6 +7,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { fileLinkProvider } from "./filelinks";
 import { gitBranches, gitCheckout, gitStatus, spawnPty, type GitInfo, type PtyHandle } from "./pty";
 import { closeBranchPicker, openBranchPicker } from "./branchpicker";
+import { showDiff } from "./diffview";
 import { homeDir } from "./recents";
 import { ArrowDown, ArrowUp, CaseSensitive, FolderGit2, GitBranch, Maximize2, Minimize2, Search, X, icon } from "./icons";
 import { currentTheme, onThemeChange, type Theme } from "./themes";
@@ -224,7 +225,9 @@ export class TermSession {
       removed.className = "pane-status-removed";
       removed.textContent = `-${info.removed}`;
       changes.append(added, removed);
-      changes.title = "Lines changed since the last commit";
+      changes.title = "Show changes since the last commit";
+      changes.addEventListener("mousedown", (e) => e.preventDefault());
+      changes.addEventListener("click", () => showDiff(this.dir, info.repo, info.branch));
       const branch = item(GitBranch, info.branch || "no commits", "pane-status-branch");
       branch.title = "Switch branch";
       // Like Warp: commits not yet pushed (↑) and not yet pulled (↓).

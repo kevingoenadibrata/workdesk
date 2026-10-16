@@ -10,6 +10,8 @@ export {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Columns2,
   Copy,
   EthernetPort,
