@@ -325,7 +325,9 @@ export class HomePage extends Page {
     const write = el("button", "home-write");
     write.title = "Write a ticket in Workdesk, GitHub or ClickUp";
     write.setAttribute("aria-label", "New ticket");
-    write.append(icon(Plus, 14), "New");
+    const writeHint = el("span", "hold-hint");
+    writeHint.append(kbdFor("newTicket"));
+    write.append(icon(Plus, 14), "New", writeHint);
     write.addEventListener("click", () => this.openComposer());
     tools.append(search, filter, reload, write);
     const chips = el("div", "home-chips");
@@ -536,6 +538,15 @@ export class HomePage extends Page {
   showServers() {
     if (!this.isOpen) this.open();
     this.openDrawer();
+  }
+
+  /** Opens Home with the New ticket composer showing; again, leaves the open composer be. */
+  newTicket() {
+    if (!this.isOpen) this.open();
+    const open = document.querySelector<HTMLElement>(".home-compose");
+    if (open) return open.querySelector<HTMLElement>(".home-compose-title")?.focus();
+    this.closeDrawer?.(false);
+    this.openComposer();
   }
 
   /** The servers' cards, in a panel sliding in from the right. */
