@@ -6,7 +6,7 @@ import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
-import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, isSavedImage } from "./tickets";
+import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, savedImageHook } from "./tickets";
 import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
@@ -879,7 +879,7 @@ export class HomePage extends Page {
 
     const desc = el("div", "home-modal-desc");
     const body = t.body?.trim();
-    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url), (src, alt) => (isSavedImage(src) ? this.savedImage(src, alt) : null)));
+    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url), savedImageHook((path) => this.source.reveal(path))));
     else desc.append(el("p", "home-modal-none", "No description."));
 
     const foot = el("div", "home-modal-foot");
@@ -947,25 +947,6 @@ export class HomePage extends Page {
   }
 
   private closeTicket: ((refocus?: boolean) => void) | null = null;
-
-  /** An image pasted into one of Workdesk's own tickets, read from disk; clicking shows it in Finder. */
-  private savedImage(path: string, alt: string): HTMLElement {
-    const name = path.split("/").pop() ?? path;
-    const b = el("button", "home-modal-image");
-    b.title = `${path}\nClick to show it in Finder`;
-    const img = el("img", "");
-    img.alt = alt || name;
-    b.append(img);
-    b.addEventListener("click", () => this.source.reveal(path));
-    ticketImages.url(path).then(
-      (url) => {
-        img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
-        img.src = url;
-      },
-      () => b.replaceChildren(el("span", "home-modal-image-gone", `Image not found: ${name}`)),
-    );
-    return b;
-  }
 
   // ---- writing a ticket ----
 
