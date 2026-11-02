@@ -3,7 +3,7 @@
 // ?scenario= picks a scenario, ?theme= a theme, ?filter=1 opens the filter menu.
 import "./styles.css";
 import { HomePage, type HomeSource } from "./home";
-import { RunStore, runKey, type Run } from "./runs";
+import { SessionStore, ticketKey, type Session } from "./sessions";
 import { el } from "./page";
 import { THEMES, currentTheme, loadTheme, setTheme, type GroupColor } from "./themes";
 import type { Agent } from "./monitor";
@@ -72,7 +72,7 @@ interface Working {
   ticket: Ticket;
   branch: string;
   agent?: { status: AgentStatus; color: GroupColor; log: string[]; age: number; from?: AgentStatus };
-  pull?: Run["pull"];
+  pull?: Session["pull"];
   review?: PullRequest["review"];
   ageMin?: number;
 }
@@ -168,7 +168,7 @@ function agent(tab: string, harness: Agent["harness"], status: AgentStatus, c: G
 
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((fn) => fn());
-let runs = new RunStore(() => {}, false);
+let runs = new SessionStore(() => {}, false);
 let agents: Agent[] = [];
 let state = SCENARIOS["Typical day"];
 let tickets: Ticket[] = [];
@@ -177,7 +177,7 @@ let refreshing = false;
 
 function load(name: string) {
   state = SCENARIOS[name];
-  runs = new RunStore(() => {}, false);
+  runs = new SessionStore(() => {}, false);
   runs.onChange(emit);
   tickets = [...state.backlog];
   agents = [];
@@ -185,14 +185,14 @@ function load(name: string) {
   for (const w of state.working) {
     const path = `/Users/me/.workdesk/worktrees/app/${w.branch.replace(/\//g, "-")}`;
     runs.add({
-      key: runKey(w.ticket),
+      id: ticketKey(w.ticket),
+      name: w.ticket.id,
       ticket: { provider: w.ticket.provider, id: w.ticket.id, title: w.ticket.title, url: w.ticket.url },
       path,
       root: "/Users/me/app",
       repo: w.pull?.url.split("/")[4] ?? "app",
       branch: w.branch,
       promptFile: "",
-      sessionId: "",
       startedAt: Date.now() - (w.ageMin ?? 60) * MIN,
       pull: w.pull ?? null,
     });
@@ -211,9 +211,9 @@ const source: HomeSource = {
     const connected = state.connected !== false;
     return { connected, loading: false, refreshing, tickets: connected ? tickets : [], errors: state.error ? [{ provider: "linear", error: state.error }] : [] };
   },
-  runs: () => runs.all,
-  runState: (run) => runs.state(run),
-  agentFor: (run) => runs.agentFor(run),
+  sessions: () => runs.all,
+  sessionState: (s) => runs.state(s),
+  agentFor: (s) => runs.agentFor(s),
   agents: () => agents,
   pullFor: (branch) => pulls.find((p) => p.branch === branch),
   usage: {
@@ -239,18 +239,18 @@ const source: HomeSource = {
   handOver: async (t, branch) => {
     await new Promise((r) => setTimeout(r, 400));
     const path = `/Users/me/.workdesk/worktrees/app/${branch.replace(/\//g, "-")}`;
-    runs.add({ key: runKey(t), ticket: { provider: t.provider, id: t.id, title: t.title, url: t.url }, path, root: "/Users/me/app", repo: "app", branch, promptFile: "", sessionId: "", startedAt: Date.now(), pull: null });
+    runs.add({ id: ticketKey(t), name: t.id, ticket: { provider: t.provider, id: t.id, title: t.title, url: t.url }, path, root: "/Users/me/app", repo: "app", branch, promptFile: "", startedAt: Date.now(), pull: null });
     const colors: GroupColor[] = ["blue", "purple", "green", "orange", "pink", "cyan"];
     agents = [agent(t.id, "claude", "thinking", colors[agents.length % colors.length], path, 0, ["Made a worktree from origin/main", "Copied .env", "✻ Reading the ticket…"], null), ...agents];
     runs.setAgents(agents);
     return `Made a worktree for ${branch} in app (from origin/main; copied .env)`;
   },
   startBranch: async (_t, branch) => `Created ${branch} in app`,
-  openRun: (run) => console.log("open run", run.key),
-  cleanup: async (run) => {
+  openSession: (s) => console.log("open session", s.id),
+  endSession: async (run) => {
     await new Promise((r) => setTimeout(r, 300));
-    tickets = tickets.filter((t) => runKey(t) !== run.key);
-    runs.delete(run.key);
+    tickets = tickets.filter((t) => !run.ticket || ticketKey(t) !== ticketKey(run.ticket));
+    runs.delete(run.id);
     return run.pull?.state === "MERGED" ? `Removed the worktree and ${run.branch}` : `Removed the worktree; kept ${run.branch}, which isn't merged`;
   },
   jumpTo: (a) => console.log("jump to", a.tabTitle),

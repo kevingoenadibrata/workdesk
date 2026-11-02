@@ -5,12 +5,34 @@ import { describeLoadout, findLoadout, usableLoadouts } from "./loadouts";
 import { favoriteDirs, toggleFavorite } from "./favorites";
 import { kbd, kbdFor } from "./kbd";
 import { comboFromEvent } from "./shortcuts";
-import { AtSign, ChevronRight, Folder, History, House, Package, Star, icon } from "./icons";
+import { AtSign, Bot, ChevronRight, Folder, History, House, Package, Star, Trash2, icon } from "./icons";
+import { showToast } from "./toast";
 
 interface Candidate {
-  /** Absolute path, or the macro or loadout name for those kinds. */
+  /** Absolute path, the macro or loadout name, or the session id, for those kinds. */
   path: string;
-  kind: "favorite" | "home" | "recent" | "dir" | "macro" | "loadout";
+  kind: "favorite" | "home" | "recent" | "dir" | "macro" | "loadout" | "session";
+}
+
+/** A session as Teleport lists it. */
+export interface TeleportSession {
+  id: string;
+  /** Its ticket's id, else its name. */
+  label: string;
+  /** "repo · branch", and the ticket's title if it has one. */
+  detail: string;
+  /** What it's up to, like "Stopped" or "PR open". */
+  status: string;
+  /** It has a pane right now; picking it goes there. */
+  open: boolean;
+}
+
+/** Where Teleport finds sessions to pick back up, and how it ends one. */
+export interface SessionSource {
+  list(): TeleportSession[];
+  recall(id: string): void;
+  /** Removes the session's worktree; resolves with what happened. */
+  end(id: string): Promise<string>;
 }
 
 /**
@@ -40,6 +62,9 @@ export interface PickOptions {
 
 const MAX_RESULTS = 50;
 const FAVORITE_COMBO = "mod+d";
+const END_SESSION_COMBO = "mod+backspace";
+/** Sessions listed before any folder when nothing's typed yet. */
+const SESSIONS_UNFILTERED = 5;
 
 const homeReady = invoke<string>("home_dir").then((dir) => {
   setHome(dir);
@@ -77,8 +102,12 @@ function score(path: string, label: string, query: string): number {
  * (plus folders in ~), favorites always first; ⌘D stars the highlighted folder; a query starting with `~` or `/` browses the filesystem, Tab
  * completing into the highlighted folder. A leading "@name" picks a macro whose
  * commands run in the new tab; "#name" opens a loadout instead of one tab.
+ * Sessions come first: picking one picks it back up (or goes to its pane),
+ * and ⌘⌫ ends it.
  */
 export class DirPicker {
+  /** Sessions to list; set once the app has them. */
+  sessions?: SessionSource;
   private root: HTMLElement | null = null;
   private backdrop: HTMLElement | null = null;
   private input!: HTMLInputElement;
@@ -130,7 +159,7 @@ export class DirPicker {
     });
   }
 
-  close(picked?: { dir: string; macro?: Macro } | { loadout: string }) {
+  close(picked?: { dir: string; macro?: Macro } | { loadout: string } | { session: string }) {
     if (!this.root) return;
     // Cleared first: removing the focused input can fire blur, which re-enters close().
     const root = this.root;
@@ -141,7 +170,9 @@ export class DirPicker {
     this.seq++;
     const { onPick, onCancel, onLoadout } = this;
     this.onPick = this.onCancel = this.onLoadout = null;
-    if (picked && "loadout" in picked) {
+    if (picked && "session" in picked) {
+      this.sessions?.recall(picked.session);
+    } else if (picked && "loadout" in picked) {
       onLoadout?.(picked.loadout);
     } else if (picked) {
       touchRecent(picked.dir);
@@ -154,7 +185,7 @@ export class DirPicker {
   private build() {
     const root = el("div", "dirpicker");
     this.input = el("input", "dirpicker-input");
-    this.input.placeholder = this.options.placeholder ?? "Teleport to…  (~/ or / to browse, @macro to run, #loadout to open)";
+    this.input.placeholder = this.options.placeholder ?? "Teleport to a session or folder…  (~/ or / to browse, @macro to run, #loadout to open)";
     this.input.spellcheck = false;
     this.input.autocomplete = "off";
     this.list = el("div", "dirpicker-list");
@@ -189,6 +220,7 @@ export class DirPicker {
     else if (e.key === "Enter") this.pick();
     else if (e.key === "Escape") this.close();
     else if (comboFromEvent(e) === FAVORITE_COMBO) this.toggleFavorite(this.items[this.selected]);
+    else if (comboFromEvent(e) === END_SESSION_COMBO && this.items[this.selected]?.kind === "session") this.endSession(this.items[this.selected].path);
     else return;
     // Also keeps Enter/Escape from landing in the terminal we refocus.
     e.preventDefault();
@@ -200,10 +232,23 @@ export class DirPicker {
     this.renderSelection();
   }
 
-  /** Teleports to the highlighted folder, running the macro if one was given, or opens the loadout. */
+  /** Ends a session from the list, then lists what's left. */
+  private endSession(id: string) {
+    if (!this.sessions) return;
+    void this.sessions.end(id).then(
+      (msg) => {
+        if (msg) showToast(msg, 4000);
+        if (this.root) void this.update();
+      },
+      (e) => showToast(String(e), 6000),
+    );
+  }
+
+  /** Teleports to the highlighted folder, running the macro if one was given, opens the loadout, or picks the session back up. */
   private pick() {
     const item = this.items[this.selected];
     if (item?.kind === "macro") return this.complete();
+    if (item?.kind === "session" && this.parse().macro == null) return this.close({ session: item.path });
     const parsed = this.parse();
     if (parsed.loadout != null) {
       const name = item?.kind === "loadout" ? item.path : findLoadout(parsed.loadout)?.name;
@@ -222,7 +267,7 @@ export class DirPicker {
 
   /** Stars or unstars a folder, keeping it highlighted as the list reorders. */
   private toggleFavorite(item: Candidate | undefined) {
-    if (!item || item.kind === "macro" || item.kind === "loadout") return;
+    if (!item || item.kind === "macro" || item.kind === "loadout" || item.kind === "session") return;
     toggleFavorite(item.path);
     this.favorites = favoriteDirs();
     void this.update(item.path);
@@ -232,7 +277,9 @@ export class DirPicker {
   private complete() {
     const item = this.items[this.selected];
     if (!item) return;
-    if (item.kind === "macro") {
+    if (item.kind === "session") {
+      return;
+    } else if (item.kind === "macro") {
       this.input.value = `@${item.path} `;
     } else if (item.kind === "loadout") {
       this.input.value = `#${item.path}`;
@@ -294,7 +341,7 @@ export class DirPicker {
           : await this.search(parsed.query);
     if (seq !== this.seq || !this.root) return;
     this.items = items.slice(0, MAX_RESULTS);
-    this.selected = Math.max(0, keep == null ? 0 : this.items.findIndex((c) => c.path === keep && c.kind !== "macro"));
+    this.selected = Math.max(0, keep == null ? 0 : this.items.findIndex((c) => c.path === keep && c.kind !== "macro" && c.kind !== "session"));
     this.renderMacro(parsed);
     this.render(parsed.loadout != null ? "loadout" : parsed.naming ? "macro" : "dir");
   }
@@ -334,7 +381,24 @@ export class DirPicker {
     }
   }
 
+  /** Sessions matching `query` (all of them, recent first, when it's empty), unless a macro's being picked. */
+  private sessionCandidates(query: string): Candidate[] {
+    if (!this.sessions || this.options.plain || this.parse().macro != null) return [];
+    if (query.startsWith("/") || query.startsWith("~")) return [];
+    const all = this.sessions.list();
+    if (!query) return all.slice(0, SESSIONS_UNFILTERED).map((s) => ({ path: s.id, kind: "session" }));
+    return all
+      .map((s, i) => ({ s, i, score: score(s.label, `${s.label} ${s.detail}`, query) }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || a.i - b.i)
+      .map((r) => ({ path: r.s.id, kind: "session" }));
+  }
+
   private async search(query: string): Promise<Candidate[]> {
+    return [...this.sessionCandidates(query), ...(await this.searchDirs(query))];
+  }
+
+  private async searchDirs(query: string): Promise<Candidate[]> {
     const favs = new Set(this.favorites);
     const favorites: Candidate[] = this.favorites.map((path) => ({ path, kind: "favorite" }));
     const home: Candidate[] = favs.has(this.home) ? [] : [{ path: this.home, kind: "home" }];
@@ -390,6 +454,27 @@ export class DirPicker {
     return row;
   }
 
+  private sessionRow(item: Candidate): HTMLElement {
+    const s = this.sessions?.list().find((x) => x.id === item.path);
+    const row = el("div", "dirpicker-item dirpicker-session");
+    const end = el("button", "dirpicker-star dirpicker-end");
+    end.tabIndex = -1;
+    end.title = "End session: remove its worktree";
+    end.append(kbd(END_SESSION_COMBO), icon(Trash2, 13));
+    end.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.endSession(item.path);
+    });
+    row.append(
+      icon(Bot, 14, "dirpicker-icon"),
+      el("span", "dirpicker-name", s?.label ?? item.path),
+      el("span", "dirpicker-parent dirpicker-session-detail", s?.detail ?? ""),
+      el("span", "dirpicker-kind", s ? (s.open ? `open · ${s.status}` : s.status) : ""),
+      end,
+    );
+    return row;
+  }
+
   private macroRow(item: Candidate): HTMLElement {
     const macro = findMacro(item.path);
     const row = el("div", "dirpicker-item");
@@ -415,7 +500,13 @@ export class DirPicker {
   private render(listing: "dir" | "macro" | "loadout") {
     const rows = this.items.map((item, i) => {
       const row =
-        item.kind === "macro" ? this.macroRow(item) : item.kind === "loadout" ? this.loadoutRow(item) : this.dirRow(item);
+        item.kind === "macro"
+          ? this.macroRow(item)
+          : item.kind === "loadout"
+            ? this.loadoutRow(item)
+            : item.kind === "session"
+              ? this.sessionRow(item)
+              : this.dirRow(item);
       row.addEventListener("mousemove", () => {
         if (this.selected === i) return;
         this.selected = i;
@@ -445,7 +536,7 @@ export class DirPicker {
     const label = this.tildify(item.path);
     const slash = label.lastIndexOf("/");
     const row = el("div", "dirpicker-item");
-    const kindIcon = { favorite: Star, home: House, recent: History, dir: Folder, macro: AtSign, loadout: Package }[item.kind];
+    const kindIcon = { favorite: Star, home: House, recent: History, dir: Folder, macro: AtSign, loadout: Package, session: Bot }[item.kind];
     const fav = item.kind === "favorite";
     const star = el("button", `dirpicker-star${fav ? " on" : ""}`);
     star.tabIndex = -1;

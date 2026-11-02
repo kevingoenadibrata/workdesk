@@ -15,8 +15,9 @@ function plausibleBranchName(name: string): boolean {
 }
 
 /**
- * A searchable branch list opening upwards from `anchor`, with `currentBranch`
- * first. Typing a name that matches no branch offers to create it.
+ * A searchable branch list opening upwards from `anchor` (or centered on
+ * `options.at`), with `currentBranch` first. Typing a name that matches no
+ * branch offers to create it.
  */
 export function openBranchPicker(
   anchor: HTMLElement,
@@ -24,6 +25,7 @@ export function openBranchPicker(
   currentBranch: string,
   onPick: (choice: BranchChoice) => void,
   onCancel: () => void,
+  options: { at?: { x: number; y: number }; placeholder?: string } = {},
 ) {
   closeBranchPicker();
   const ordered = [...branches.filter((b) => b === currentBranch), ...branches.filter((b) => b !== currentBranch)];
@@ -33,7 +35,7 @@ export function openBranchPicker(
   const input = document.createElement("input");
   input.className = "branch-search";
   input.type = "text";
-  input.placeholder = "Search branches…";
+  input.placeholder = options.placeholder ?? "Search branches…";
   input.spellcheck = false;
   input.autocomplete = "off";
   input.setAttribute("aria-label", "Search branches");
@@ -127,8 +129,9 @@ export function openBranchPicker(
   document.body.append(root);
   const a = anchor.getBoundingClientRect();
   const r = root.getBoundingClientRect();
-  root.style.left = `${Math.max(4, Math.min(a.left, innerWidth - r.width - 4))}px`;
-  root.style.top = `${Math.max(4, a.top - r.height - 6)}px`;
+  const at = options.at;
+  root.style.left = `${Math.max(4, Math.min(at ? at.x - r.width / 2 : a.left, innerWidth - r.width - 4))}px`;
+  root.style.top = `${at ? at.y : Math.max(4, a.top - r.height - 6)}px`;
   current = { root, close: () => close(true) };
   window.addEventListener("mousedown", onOutside, true);
   window.addEventListener("blur", onBlur);

@@ -7,7 +7,7 @@ import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
 import { PROVIDERS, branchName, providerName, updatedAt, ago, type PullRequest, type Ticket, type TicketStore } from "./tickets";
-import { runKey, type Run, type RunState, type RunStore } from "./runs";
+import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
 import { ServerList, type LocalServers, type Server } from "./servers";
@@ -25,9 +25,9 @@ import type { TermSession } from "./terminal";
 export interface HomeSource {
   /** `loading`: nothing read yet; `refreshing`: a read is under way. */
   tickets(): { connected: boolean; loading: boolean; refreshing: boolean; tickets: Ticket[]; errors: { provider: Provider; error: string }[] };
-  runs(): Run[];
-  runState(run: Run): RunState;
-  agentFor(run: Run): Agent | undefined;
+  sessions(): Session[];
+  sessionState(session: Session): SessionState;
+  agentFor(session: Session): Agent | undefined;
   /** Every agent Agent Monitor sees, ticket or not. */
   agents(): Agent[];
   /** The open GitHub pull request from `branch`, for its review state. */
@@ -40,8 +40,10 @@ export interface HomeSource {
   handOver(ticket: Ticket, branch: string): Promise<string>;
   /** Checks out the ticket's branch in a repo the user picks (no agent). */
   startBranch(ticket: Ticket, branch: string): Promise<string>;
-  openRun(run: Run): void;
-  cleanup(run: Run): Promise<string>;
+  /** Goes to the session's pane, or picks it back up in a new one. */
+  openSession(session: Session): void;
+  /** Closes the session's pane and removes its worktree; resolves "" if the pane was kept. */
+  endSession(session: Session): Promise<string>;
   jumpTo(agent: Agent): void;
   openUrl(url: string): void;
   openSettings(): void;
@@ -94,10 +96,10 @@ function loadFilters(): Filters {
   }
 }
 
-/** Which lane a run's card sits in: with its agent while the agent is busy, else with its pull request if it has one. */
-function laneOf(state: RunState, run: Run): "agents" | "pulls" {
+/** Which lane a session's card sits in: with its agent while the agent is busy, else with its pull request if it has one. */
+function laneOf(state: SessionState, session: Session): "agents" | "pulls" {
   if (state === "waiting" || state === "working") return "agents";
-  return run.pull ? "pulls" : "agents";
+  return session.pull ? "pulls" : "agents";
 }
 
 const REVIEW: Record<NonNullable<PullRequest["review"]>, [string, string]> = {
@@ -503,7 +505,7 @@ export class HomePage extends Page {
   }
 
   /** Flashes how `p` went; if it failed, with a way to fix it or `retry`. */
-  private report(p: Promise<string>, retry: () => void, run?: Run) {
+  private report(p: Promise<string>, retry: () => void, run?: Session) {
     return p.then(
       (msg) => this.showFlash(msg),
       (e) => this.showFlash(String(e), true, this.actionFixes(String(e), retry, run)),
@@ -511,14 +513,13 @@ export class HomePage extends Page {
   }
 
   /** What to offer when making or removing a worktree failed. */
-  private actionFixes(error: string, retry: () => void, run?: Run): Fix[] {
+  private actionFixes(error: string, retry: () => void, run?: Session): Fix[] {
     const again = { label: "Try again", run: retry };
     const checkedOut = error.match(/ is checked out in (.+?)\. Switch/);
     if (checkedOut) return [{ label: "Open a tab there", run: () => this.source.openTab(checkedOut[1]) }, again];
     const taken = error.match(/^(.+) already exists and isn't a worktree/);
     if (taken) return [{ label: "Show in Finder", run: () => this.source.reveal(taken[1]) }, again];
     if (/isn't in a git repo|bare repo/.test(error)) return [{ label: "Pick another folder", run: retry }];
-    if (run && /^Close the tab working in/.test(error)) return [{ label: "Go to tab", run: () => this.source.openRun(run) }, again];
     if (run && /has changes that aren't committed/.test(error)) return [{ label: "Open a tab there", run: () => this.source.openTab(run.path) }, again];
     return [again];
   }
@@ -676,10 +677,10 @@ export class HomePage extends Page {
 
   /** Tickets nobody's working on yet. */
   private backlogTickets(): Ticket[] {
-    const taken = new Set(this.source.runs().map((r) => r.key));
+    const taken = new Set(this.source.sessions().flatMap((s) => (s.ticket ? [ticketKey(s.ticket)] : [])));
     return this.source
       .tickets()
-      .tickets.filter((t) => !taken.has(runKey(t)))
+      .tickets.filter((t) => !taken.has(ticketKey(t)))
       .sort((a, b) => updatedAt(b) - updatedAt(a));
   }
 
@@ -761,7 +762,7 @@ export class HomePage extends Page {
     this.renderPager(matching.length);
     const now = Date.now();
     const cards = shown.map((t) =>
-      this.card(`ticket:${runKey(t)}`, `${t.title}\0${t.status}\0${t.color}\0${t.project}\0${ago(updatedAt(t), now)}`, () => this.backlogCard(t)),
+      this.card(`ticket:${ticketKey(t)}`, `${t.title}\0${t.status}\0${t.color}\0${t.project}\0${ago(updatedAt(t), now)}`, () => this.backlogCard(t)),
     );
     if (!cards.length) {
       const none = el("div", "home-empty");
@@ -917,7 +918,7 @@ export class HomePage extends Page {
     });
     hand.addEventListener("click", () => {
       close(false);
-      const card = this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${runKey(t)}`)}"]`);
+      const card = this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(t)}`)}"]`);
       if (card) this.handOver(t, card);
     });
     hand.focus();
@@ -925,7 +926,7 @@ export class HomePage extends Page {
 
   private closeTicket: ((refocus?: boolean) => void) | null = null;
 
-  /** Hands `t` to Claude; once its run shows up, the card flies over to the agent lane. */
+  /** Hands `t` to Claude; once its session shows up, the card flies over to the agent lane. */
   private handOver(t: Ticket, card: HTMLElement) {
     const from = card.getBoundingClientRect();
     card.classList.add("busy");
@@ -935,13 +936,14 @@ export class HomePage extends Page {
         if (!msg) return;
         this.showFlash(msg);
         this.render();
-        const landed = this.els?.agents.querySelector<HTMLElement>(`[data-key="${CSS.escape(`run:${runKey(t)}`)}"]`);
+        const session = this.source.sessions().find((s) => s.ticket && ticketKey(s.ticket) === ticketKey(t));
+        const landed = session && this.els?.agents.querySelector<HTMLElement>(`[data-key="${CSS.escape(`session:${session.id}`)}"]`);
         if (landed) this.fly(card, from, landed);
       },
       (e) => {
         card.classList.remove("busy");
         // Try again from the ticket's card as it is by then.
-        const retry = () => this.handOver(t, this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${runKey(t)}`)}"]`) ?? card);
+        const retry = () => this.handOver(t, this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(t)}`)}"]`) ?? card);
         this.showFlash(String(e), true, this.actionFixes(String(e), retry));
       },
     );
@@ -1119,25 +1121,25 @@ export class HomePage extends Page {
   private renderAgents() {
     const e = this.els!;
     const now = Date.now();
-    const runs = this.source.runs().map((run) => ({ run, state: this.source.runState(run), agent: this.source.agentFor(run) }));
+    const runs = this.source.sessions().map((run) => ({ run, state: this.source.sessionState(run), agent: this.source.agentFor(run) }));
     const here = runs.filter((r) => laneOf(r.state, r.run) === "agents");
     setText(e.agentCount, String(here.length));
     const card = (r: (typeof here)[number]) => {
       const a = r.agent;
       const sig = [r.state, a?.status, a ? faceOf(a, now) : "", a?.color, a?.lastLog.slice(-logLines()).join("\n"), a ? ago(a.since, now) : ago(r.run.startedAt, now)].join("\0");
-      return this.card(`run:${r.run.key}`, sig, () => this.agentCard(r.run, r.state, a, now));
+      return this.card(`session:${r.run.id}`, sig, () => this.agentCard(r.run, r.state, a, now));
     };
     const waiting = here.filter((r) => r.state === "waiting" || r.agent?.status === "error");
     const busy = here.filter((r) => r.state === "working" && r.agent?.status !== "error");
     const stopped = here.filter((r) => !waiting.includes(r) && !busy.includes(r));
 
     const parts: HTMLElement[] = [];
-    if (!here.length) parts.push(this.empty("No agent has a ticket", "Open a ticket in the backlog and choose Hand to Claude."));
+    if (!here.length) parts.push(this.empty("No sessions", "Open a ticket in the backlog and choose Hand to Claude, or start one with ⌘⇧N."));
     if (waiting.length) parts.push(this.group("waiting", "Needs you", "var(--waiting)", waiting.map(card)));
     if (busy.length) parts.push(this.group("busy", "Working", "var(--accent)", busy.map(card)));
     if (stopped.length) parts.push(this.group("stopped", "Stopped without a pull request", "var(--faint)", stopped.map(card)));
 
-    // Agents in panes that aren't working on any ticket's worktree.
+    // Agents in panes that aren't in any session's worktree.
     const mine = new Set(runs.map((r) => r.agent?.session).filter(Boolean));
     const loose = this.source.agents().filter((a) => !mine.has(a.session));
     if (loose.length) {
@@ -1156,25 +1158,24 @@ export class HomePage extends Page {
           fillAgentCard(card, a, now);
           return card;
         });
-      parts.push(this.group("loose", "Not on a ticket", null, cards));
+      parts.push(this.group("loose", "Not in a session", null, cards));
     }
     sync(e.agents, parts);
   }
 
-  private agentCard(run: Run, state: RunState, a: Agent | undefined, now: number): HTMLElement {
-    const t = run.ticket;
+  private agentCard(run: Session, state: SessionState, a: Agent | undefined, now: number): HTMLElement {
     // A div acting as a button: a stopped run's card holds a button of its own.
     const card = el("div", "home-card agent");
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.dataset.status = a?.status ?? "stopped";
     card.style.setProperty("--bot", a?.color ?? "var(--faint)");
-    card.title = a ? `Go to the ${a.tabTitle} tab` : `Resume Claude on ${t.id} in a new tab`;
-    card.addEventListener("click", () => this.source.openRun(run));
+    card.title = a ? `Go to the ${a.tabTitle} tab` : `Resume Claude on ${sessionLabel(run)} in a new tab`;
+    card.addEventListener("click", () => this.source.openSession(run));
     card.addEventListener("keydown", (e) => {
       if ((e.key === "Enter" || e.key === " ") && e.target === card) {
         e.preventDefault();
-        this.source.openRun(run);
+        this.source.openSession(run);
       }
     });
     const face: BotFace = a ? faceOf(a, now) : "sleep";
@@ -1183,7 +1184,7 @@ export class HomePage extends Page {
     stub.append(el("span", "home-badge", a ? BADGE_LABELS[a.status] : "Stopped"));
     const body = el("div", "home-body");
     const line = el("div", "home-line");
-    line.append(logoSpan(t.provider, 12), el("span", "home-id", t.id), el("span", "home-name", t.title), el("span", "home-when", ago(a?.since ?? run.startedAt, now)));
+    line.append(...this.sessionTitle(run), el("span", "home-when", ago(a?.since ?? run.startedAt, now)));
     body.append(line);
     const log = a?.lastLog.slice(-logLines()) ?? [];
     if (log.length && a?.status !== "idle") {
@@ -1210,16 +1211,16 @@ export class HomePage extends Page {
     }
     body.append(meta);
     card.append(stub, body);
-    // A stopped run can be put away here too.
+    // A stopped session can be ended here too.
     if (!a) {
       const actions = el("div", "home-actions");
       const clean = el("button", "home-action");
-      clean.title = "Remove the worktree (keeps the branch)";
+      clean.title = "End the session: remove the worktree (keeps the branch)";
       clean.setAttribute("aria-label", clean.title);
       clean.append(icon(Trash2, 13));
       clean.addEventListener("click", (e) => {
         e.stopPropagation();
-        const remove = () => void this.report(this.source.cleanup(run), remove, run);
+        const remove = () => void this.report(this.source.endSession(run), remove, run);
         remove();
       });
       actions.append(clean);
@@ -1228,7 +1229,16 @@ export class HomePage extends Page {
     return card;
   }
 
-  /** Agent Monitor cards for agents with no ticket, by pane. */
+  /** A session card's title: its ticket's logo, id and title, or its name and repo when it has no ticket. */
+  private sessionTitle(s: Session, title?: string): HTMLElement[] {
+    const t = s.ticket;
+    if (t) return [logoSpan(t.provider, 12), el("span", "home-id", t.id), el("span", "home-name", title || t.title)];
+    const bot = el("span", "home-logo");
+    bot.append(icon(Bot, 12));
+    return [bot, el("span", "home-id", s.name), el("span", "home-name", title || s.repo)];
+  }
+
+  /** Agent Monitor cards for agents with no session, by pane. */
   private looseCards = new Map<TermSession, HTMLElement>();
 
   // ---- pull requests ----
@@ -1237,8 +1247,8 @@ export class HomePage extends Page {
     const e = this.els!;
     const now = Date.now();
     const runs = this.source
-      .runs()
-      .map((run) => ({ run, state: this.source.runState(run), agent: this.source.agentFor(run) }))
+      .sessions()
+      .map((run) => ({ run, state: this.source.sessionState(run), agent: this.source.agentFor(run) }))
       .filter((r) => laneOf(r.state, r.run) === "pulls");
     const open = runs.filter((r) => r.run.pull!.state === "OPEN");
     const done = runs.filter((r) => r.run.pull!.state !== "OPEN");
@@ -1247,20 +1257,19 @@ export class HomePage extends Page {
       const gh = this.source.pullFor(r.run.branch);
       const p = r.run.pull!;
       const sig = [p.state, p.number, p.title, p.draft, gh?.review, gh?.draft, r.agent?.color, r.agent?.tabTitle, ago(r.run.startedAt, now)].join("\0");
-      return this.card(`run:${r.run.key}`, sig, () => this.pullCard(r.run, r.agent, gh));
+      return this.card(`session:${r.run.id}`, sig, () => this.pullCard(r.run, r.agent, gh));
     };
     const parts: HTMLElement[] = [];
     const error = this.source.pullError();
     if (error) parts.push(this.card("pull-error", error, () => this.errorRow("github", error)));
-    if (!runs.length) parts.push(this.empty("No pull requests yet", "When an agent opens one for a ticket, the ticket moves here."));
+    if (!runs.length) parts.push(this.empty("No pull requests yet", "When a session's agent opens one, the session moves here."));
     if (open.length) parts.push(this.group("open", "Open", null, open.map(card)));
     if (done.length) parts.push(this.group("done", "Merged or closed", "var(--merged)", done.map(card)));
     sync(e.pulls, parts);
   }
 
-  private pullCard(run: Run, agent: Agent | undefined, gh: PullRequest | undefined): HTMLElement {
+  private pullCard(run: Session, agent: Agent | undefined, gh: PullRequest | undefined): HTMLElement {
     const p = run.pull!;
-    const t = run.ticket;
     const card = el("div", "home-card pull");
     card.tabIndex = 0;
     card.dataset.state = p.state;
@@ -1278,7 +1287,7 @@ export class HomePage extends Page {
     stub.append(icon(p.state === "MERGED" ? GitMerge : p.state === "CLOSED" ? GitPullRequestClosed : GitPullRequest, 15), el("span", "", `#${p.number}`));
     const body = el("div", "home-body");
     const line = el("div", "home-line");
-    line.append(logoSpan(t.provider, 12), el("span", "home-id", t.id), el("span", "home-name", p.title || t.title));
+    line.append(...this.sessionTitle(run, p.title));
     const meta = el("div", "home-meta");
     if (p.state === "OPEN") {
       const draft = gh?.draft ?? p.draft;
@@ -1287,12 +1296,12 @@ export class HomePage extends Page {
     } else {
       meta.append(pill(p.state === "MERGED" ? "Merged" : "Closed", p.state === "MERGED" ? "var(--merged)" : "var(--danger)"));
       const clean = el("button", "home-cleanup");
-      clean.append(icon(Trash2, 12), "Clean up worktree");
+      clean.append(icon(Trash2, 12), "End session");
       clean.title = p.state === "MERGED" ? `Remove the worktree and ${run.branch}` : "Remove the worktree (keeps the branch)";
       clean.addEventListener("click", () => {
         const remove = () => {
           card.classList.add("leaving");
-          void this.report(this.source.cleanup(run), remove, run).finally(() => card.classList.remove("leaving"));
+          void this.report(this.source.endSession(run), remove, run).finally(() => card.classList.remove("leaving"));
         };
         remove();
       });
@@ -1304,7 +1313,7 @@ export class HomePage extends Page {
       holder.innerHTML = botSvg("idle");
       holder.append(`Tab ${agent.tabTitle} open`);
       holder.title = `Go to the ${agent.tabTitle} tab`;
-      holder.addEventListener("click", () => this.source.openRun(run));
+      holder.addEventListener("click", () => this.source.openSession(run));
       meta.append(holder);
     }
     meta.append(el("span", "home-branch", run.repo));
@@ -1319,15 +1328,15 @@ export class HomePage extends Page {
 /** Home fed by the ticket store, the run store and Agent Monitor. */
 export function liveHomeSource(
   tickets: TicketStore,
-  runs: RunStore,
+  sessions: SessionStore,
   monitor: AgentMonitor,
   servers: LocalServers,
   actions: Pick<
     HomeSource,
     | "handOver"
     | "startBranch"
-    | "openRun"
-    | "cleanup"
+    | "openSession"
+    | "endSession"
     | "jumpTo"
     | "openUrl"
     | "openSettings"
@@ -1346,9 +1355,9 @@ export function liveHomeSource(
       tickets: tickets.tickets,
       errors: tickets.connected.map((provider) => ({ provider, error: tickets.state.get(provider)!.error })).filter((e) => e.error),
     }),
-    runs: () => runs.all,
-    runState: (run) => runs.state(run),
-    agentFor: (run) => runs.agentFor(run),
+    sessions: () => sessions.all,
+    sessionState: (s) => sessions.state(s),
+    agentFor: (s) => sessions.agentFor(s),
     agents: () => monitor.current,
     pullError: () => {
       const error = tickets.hasPulls ? tickets.pullState.error : "";
@@ -1359,7 +1368,7 @@ export function liveHomeSource(
     servers: () => servers.current,
     onChange: (fn) => {
       tickets.onChange(fn);
-      runs.onChange(fn);
+      sessions.onChange(fn);
       monitor.onChange(fn);
       servers.onChange(fn);
     },

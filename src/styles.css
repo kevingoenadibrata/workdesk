@@ -405,6 +405,33 @@ body.resizing-rows * {
   text-overflow: ellipsis;
 }
 
+/* A session's pull request, after its tab's title. */
+.tab-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.tab-badge[data-state="OPEN"] .icon {
+  color: var(--group-green, #6fd08c);
+}
+
+.tab-badge[data-state="MERGED"] .icon {
+  color: var(--group-purple, #b48cff);
+}
+
+.tab-badge[data-state="CLOSED"] .icon {
+  color: var(--danger);
+}
+
+body.show-hints .tab-badge,
+.tab:hover .tab-badge {
+  display: none;
+}
+
 /* ⌘1–8 and ⌘T hints stay hidden until ⌘ is held (see installHoldHints). */
 .tab-hint {
   flex: none;
@@ -774,23 +801,20 @@ body.sidebar-collapsed:not(.sidebar-peek) #titlebar {
   opacity: 0.6;
 }
 
-/* Only split panes get a header: a handle to rearrange them or drag one out to the sidebar. */
+/* Every pane's header: a handle to rearrange a split or drag a pane out to the
+   sidebar, and a session's bar (worktree, ticket, PR). */
 .pane-header {
-  display: none;
+  display: flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: 26px;
   padding: 0 4px 0 12px;
   font-size: 11px;
   color: var(--faint);
   background: var(--sidebar);
   border-bottom: 1px solid var(--border);
   cursor: grab;
-}
-
-.panes.split .pane-header {
-  display: flex;
 }
 
 .pane.focused .pane-header {
@@ -801,12 +825,163 @@ body.sidebar-collapsed:not(.sidebar-peek) #titlebar {
   color: var(--text);
 }
 
+.pane-title[hidden],
+.pane-session[hidden] {
+  display: none;
+}
+
 .pane-title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.pane-session {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -6px;
+}
+
+.pane-session-state {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 0 4px 0 2px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+.pane-session-state[data-state="working"] {
+  background: var(--accent);
+}
+
+.pane-session-state[data-state="waiting"] {
+  background: var(--group-yellow, #f2c66d);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--group-yellow, #f2c66d) 25%, transparent);
+}
+
+.pane-session-state[data-state="pr"] {
+  background: var(--group-green, #6fd08c);
+}
+
+.pane-session-state[data-state="merged"] {
+  background: var(--group-purple, #b48cff);
+}
+
+.pane-session-state[data-state="closed"] {
+  background: var(--danger);
+}
+
+.pane-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.pane-chip:hover:not(:disabled) {
+  background: var(--active);
+  color: var(--text);
+}
+
+.pane-chip:disabled {
+  cursor: default;
+}
+
+.pane-chip .icon,
+.pane-chip-logo {
+  flex: none;
+  display: inline-flex;
+  color: var(--faint);
+}
+
+.pane-chip-main {
+  flex: none;
+  color: var(--text);
+}
+
+.pane:not(.focused) .pane-chip-main {
+  color: var(--muted);
+}
+
+.pane-chip-sub {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--faint);
+}
+
+.pane-chip.worktree .pane-chip-sub {
+  font-family: var(--code);
+}
+
+/* The ticket's title takes whatever room is left. */
+.pane-chip.ticket {
+  flex: 0 10 auto;
+}
+
+/* The PR's number and state always show in full. */
+.pane-chip.pull {
+  flex: none;
+}
+
+.pane-chip.empty .pane-chip-main {
+  color: var(--faint);
+}
+
+.pane-chip.empty:hover .pane-chip-main {
+  color: var(--text);
+}
+
+.pane-chip.pull[data-state="OPEN"] .icon {
+  color: var(--group-green, #6fd08c);
+}
+
+.pane-chip.pull[data-state="MERGED"] .icon {
+  color: var(--group-purple, #b48cff);
+}
+
+.pane-chip.pull[data-state="CLOSED"] .icon {
+  color: var(--danger);
+}
+
+.ticket-picker {
+  width: 380px;
+}
+
+.ticket-picker-item:disabled {
+  opacity: 0.45;
+}
+
+.ticket-picker-logo {
+  display: inline-flex;
+}
+
+.ticket-picker-id {
+  flex: none;
+  margin-right: 8px;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ticket-picker-item .menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pane-close,
@@ -1515,6 +1690,22 @@ body.sidebar-collapsed:not(.sidebar-peek) #titlebar {
 .dirpicker-item.selected .dirpicker-icon.favorite {
   color: var(--accent);
   fill: currentColor;
+}
+
+.dirpicker-session .dirpicker-name {
+  flex: none;
+  margin-right: 10px;
+}
+
+.dirpicker-session .dirpicker-session-detail {
+  flex: 1 1 auto;
+  direction: ltr;
+  color: var(--faint);
+}
+
+.dirpicker-end:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* Star toggle: shown on the highlighted row, with its shortcut. */

@@ -51,11 +51,13 @@ function searchDecorations(t: Theme): ISearchOptions["decorations"] {
 
 /** One xterm.js instance wired to one shell process. */
 export class TermSession {
-  /** The pane: a header (shown only in split tabs) above the terminal. */
+  /** The pane: a header above the terminal. */
   readonly pane: HTMLDivElement;
-  /** Draggable strip naming the pane; drag it to rearrange the split or out to the sidebar. */
+  /** Draggable strip naming the pane; drag it to rearrange the split or out to the sidebar. A session's pane shows its worktree, ticket and PR there. */
   readonly header: HTMLDivElement;
   private headerTitle: HTMLSpanElement;
+  /** Where a session's worktree, ticket and PR go, in place of the title. */
+  readonly headerInfo: HTMLDivElement;
   readonly el: HTMLDivElement;
   readonly term: Terminal;
   private fitAddon = new FitAddon();
@@ -88,6 +90,10 @@ export class TermSession {
   startCwd = "";
   /** The macro the shell was started with, if any, so a loadout saved from this pane runs it again. */
   macro?: string;
+  /** The Workdesk session this pane is, if it's one (Claude in a worktree), else a plain shell. */
+  sessionId?: string;
+  /** The session's name, which titles the pane in place of its folder. */
+  sessionName?: string;
   /** Share of the tab's width its column gets (kept the same on every pane in the column). */
   colWeight = 1;
   /** Share of its column's height. */
@@ -104,6 +110,9 @@ export class TermSession {
     this.header.draggable = true;
     this.headerTitle = document.createElement("span");
     this.headerTitle.className = "pane-title";
+    this.headerInfo = document.createElement("div");
+    this.headerInfo.className = "pane-session";
+    this.headerInfo.hidden = true;
     const close = document.createElement("button");
     close.className = "pane-close";
     close.title = "Close pane";
@@ -116,7 +125,7 @@ export class TermSession {
     this.treeButton.title = "File tree";
     this.treeButton.setAttribute("aria-label", "File tree");
     this.treeButton.append(icon(FolderTree, 12));
-    this.header.append(this.headerTitle, this.maximizeButton, close);
+    this.header.append(this.headerTitle, this.headerInfo, this.maximizeButton, close);
     this.el = document.createElement("div");
     this.el.className = "term";
     this.body = document.createElement("div");
@@ -202,8 +211,9 @@ export class TermSession {
     sessions.add(this);
   }
 
-  /** Name of the current folder ("~" for home), else the running program. */
+  /** The session's name, else the current folder's ("~" for home), else the running program. */
   get title(): string {
+    if (this.sessionName) return this.sessionName;
     if (this.cwd) {
       const home = homeDir();
       if (this.cwd === home) return "~";
@@ -216,6 +226,14 @@ export class TermSession {
   updateHeader() {
     const title = this.title;
     if (this.headerTitle.textContent !== title) this.headerTitle.textContent = title;
+    this.headerTitle.hidden = !this.headerInfo.hidden;
+  }
+
+  /** Shows `info` (a session's worktree, ticket and PR) in the header in place of the title, or the title again (`null`). */
+  setHeaderInfo(info: Node[] | null) {
+    this.headerInfo.hidden = !info;
+    this.headerInfo.replaceChildren(...(info ?? []));
+    this.updateHeader();
   }
 
   /** Records the shell's new folder, and shows it in the file tree if that's open. */

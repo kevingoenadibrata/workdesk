@@ -1,6 +1,6 @@
 import { ChevronDown, Folder, FolderOpen, Package, Plus, Star, X, icon } from "./icons";
 import { favoriteDirs, tildePath } from "./favorites";
-import { COLOR_NAMES, GROUP_COLORS, isGroupEntry, type Group, type Location, type Workspace } from "./workspace";
+import { COLOR_NAMES, GROUP_COLORS, isGroupEntry, type Group, type Location, type Tab, type Workspace } from "./workspace";
 import { closeMenu, isMenuOpen, showMenu, type MenuItem } from "./menu";
 import { isModClick, type Action } from "./shortcuts";
 import { kbdFor } from "./kbd";
@@ -37,6 +37,8 @@ export class Sidebar {
 
   /** Opens the layout picker for the active tab. */
   onRelayout?: () => void;
+  /** Something to show after a tab's title, like its session's pull request. */
+  badge?: (tab: Tab) => HTMLElement | null;
 
   constructor(
     private root: HTMLElement,
@@ -233,7 +235,10 @@ export class Sidebar {
     const close = el("button", "tab-close");
     close.append(icon(X, 13));
     close.title = "Close tab";
-    row.append(this.layoutIcon(id), el("span", "tab-title", this.ws.title(tab)), hint, close);
+    row.append(this.layoutIcon(id), el("span", "tab-title", this.ws.title(tab)));
+    const badge = this.badge?.(tab);
+    if (badge) row.append(badge);
+    row.append(hint, close);
 
     close.addEventListener("click", (e) => {
       e.stopPropagation();
