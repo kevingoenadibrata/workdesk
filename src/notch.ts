@@ -63,12 +63,25 @@ const teleportBtn = $(".act[data-action=teleport]");
 ticketBtn.prepend(icon(TicketPlus, 14));
 teleportBtn.prepend(icon(Orbit, 14));
 for (const btn of [ticketBtn, teleportBtn]) {
-  btn.onclick = () => void invoke("notch_action", { action: btn.dataset.action });
+  btn.onclick = () => {
+    // The modal opens in Workdesk, so get the panel out of the way.
+    collapse();
+    void invoke("notch_action", { action: btn.dataset.action });
+  };
 }
 
 let agents: NotchAgent[] = [];
 let open = false;
 let closeTimer: number | undefined;
+/** Closed by a click: stay closed until the pointer leaves, so it doesn't pop back open under it. */
+let dismissed = false;
+
+function collapse() {
+  clearTimeout(closeTimer);
+  dismissed = true;
+  open = false;
+  layout();
+}
 
 /** The agent the collapsed notch speaks for: one that needs you, else a busy one, else the first. */
 function lead(): NotchAgent | undefined {
@@ -136,6 +149,8 @@ function layout() {
 
 void listen<boolean>("notch-hover", ({ payload: hovering }) => {
   clearTimeout(closeTimer);
+  if (!hovering) dismissed = false;
+  if (dismissed) return;
   if (hovering) {
     if (!open) void refreshUsage();
     open = true;
