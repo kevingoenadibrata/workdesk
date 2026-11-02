@@ -62,6 +62,15 @@ const actions: SessionBarActions = {
   detachTicket: log("detach"),
   sendBrief: log("brief"),
   openUrl: (url) => console.log("open", url),
+  ticketDetails: (s) => ({
+    ...s.ticket!,
+    project: "workdesk",
+    status: "In Progress",
+    color: "#f2c66d",
+    updated: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    branch: null,
+    body: "Searches from logged-out users hit the database directly.\n\n## Plan\n\n- Add a token bucket per IP\n- Return `429` with `Retry-After`\n\nSee https://example.com/spec for details.",
+  }),
 };
 
 /** A row of panes: one per session given, plus a plain shell when `shell`. */
@@ -118,3 +127,6 @@ void picker.open(
   () => {},
   () => {},
 );
+
+// ?ticket opens the first pane's ticket panel.
+if (params.has("ticket")) document.querySelector<HTMLElement>(".pane-chip.ticket")?.click();
