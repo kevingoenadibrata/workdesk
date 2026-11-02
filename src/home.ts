@@ -87,14 +87,16 @@ interface ComposeMemory {
   provider: Writable;
   /** The last repo, list or project picked, per destination. */
   targets: Partial<Record<Writable, Target>>;
+  /** Whether the new ticket goes straight to Claude once it's written. */
+  hand: boolean;
 }
 
 function loadCompose(): ComposeMemory {
   try {
     const saved = JSON.parse(localStorage.getItem(COMPOSE_KEY) ?? "{}");
-    return { provider: WRITABLE.includes(saved.provider) ? saved.provider : "workdesk", targets: saved.targets ?? {} };
+    return { provider: WRITABLE.includes(saved.provider) ? saved.provider : "workdesk", targets: saved.targets ?? {}, hand: saved.hand === true };
   } catch {
-    return { provider: "workdesk", targets: {} };
+    return { provider: "workdesk", targets: {}, hand: false };
   }
 }
 
@@ -1004,7 +1006,16 @@ export class HomePage extends Page {
     const hint = el("span", "home-compose-hint", editing ? "⌘↵ to save" : "⌘↵ to create");
     const submit = el("button", "home-hand home-modal-hand");
     submit.type = "submit";
-    foot.append(hint, submit);
+    // A new ticket can go straight to Claude: a worktree and a session start on it once it's written.
+    const handBox = el("input", "home-compose-handbox");
+    handBox.type = "checkbox";
+    handBox.checked = memory.hand;
+    const handLabel = el("label", "home-compose-handto");
+    handLabel.title = "Once it's written, make a worktree for it and start a Claude session on it";
+    handLabel.append(handBox, icon(Bot, 13), "Hand to Claude");
+    const left = el("div", "home-compose-left");
+    left.append(...(editing ? [] : [handLabel]), hint);
+    foot.append(left, submit);
     modal.append(head, where, title, body, error, foot);
     backdrop.append(modal);
     document.body.append(backdrop);
@@ -1022,8 +1033,7 @@ export class HomePage extends Page {
       provider = p;
       showError("");
       for (const b of destButtons) b.setAttribute("aria-checked", String(b.dataset.provider === p));
-      if (editing) submit.replaceChildren(icon(Check, 14), "Save");
-      else submit.replaceChildren(icon(Plus, 14), p === "workdesk" ? "Create ticket" : `Create in ${providerName(p)}`);
+      label();
       const remembered = editing ? { id: editing.project, name: editing.project } : memory.targets[p];
       const token = ++loadToken;
       if (p === "workdesk") {
@@ -1074,6 +1084,13 @@ export class HomePage extends Page {
         },
       );
     };
+    /** The submit button says what it'll do: save, create, or create and hand over. */
+    const label = () => {
+      if (editing) submit.replaceChildren(icon(Check, 14), "Save");
+      else if (handBox.checked) submit.replaceChildren(icon(Bot, 14), "Create & hand to Claude");
+      else submit.replaceChildren(icon(Plus, 14), provider === "workdesk" ? "Create ticket" : `Create in ${providerName(provider)}`);
+    };
+    handBox.addEventListener("change", label);
     pick(provider);
     if (editing) {
       title.value = editing.title;
@@ -1119,6 +1136,7 @@ export class HomePage extends Page {
       modal.classList.add("busy");
       showError("");
       const p = provider;
+      const hand = handBox.checked;
       if (editing) {
         void this.source.updateTicket(editing, { title: title.value, project: t.name, body: body.value }).then(
           (ticket) => {
@@ -1139,15 +1157,17 @@ export class HomePage extends Page {
       void this.source.createTicket({ provider: p, target: t, title: title.value, body: body.value }).then(
         (ticket) => {
           try {
-            localStorage.setItem(COMPOSE_KEY, JSON.stringify({ provider: p, targets: { ...memory.targets, [p]: t } }));
+            const saved: ComposeMemory = { provider: p, targets: { ...memory.targets, [p]: t }, hand };
+            localStorage.setItem(COMPOSE_KEY, JSON.stringify(saved));
           } catch {}
           close();
           this.page = 0;
           this.render();
           this.showFlash(p === "workdesk" ? `Wrote ${ticket.id}` : `Created ${ticket.id} in ${ticket.project || providerName(p)}`);
-          const card = this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(ticket)}`)}"]`);
-          card?.classList.add("arrived");
+          const card = this.backlogCardFor(ticket);
           card?.scrollIntoView({ block: "nearest" });
+          if (hand) void this.handOver(ticket, card);
+          else card?.classList.add("arrived");
         },
         (err) => {
           busy = false;

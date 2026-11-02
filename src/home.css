@@ -1543,6 +1543,34 @@
   color: var(--danger);
   font-size: 12px;
 }
+.home-compose-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.home-compose-handto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.home-compose-handto:hover {
+  color: var(--text);
+}
+.home-compose-handto:has(:checked) {
+  color: var(--text);
+}
+.home-compose-handbox {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .home-compose-hint {
   padding-left: 6px;
   color: var(--faint);
