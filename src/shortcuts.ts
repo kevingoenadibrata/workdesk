@@ -10,7 +10,6 @@ export function isModClick(e: MouseEvent): boolean {
 }
 
 export type Action =
-  | "newTab"
   | "newTabIn"
   | "newSession"
   | "openHome"
@@ -53,8 +52,7 @@ export type Action =
  * types. Rebinding on the Shortcuts page layers overrides on top; see keymap().
  */
 export const DEFAULT_KEYMAP: Record<string, Action> = {
-  "mod+t": "newTab",
-  "mod+shift+t": "newTabIn",
+  "mod+t": "newTabIn",
   "mod+shift+n": "newSession",
   "mod+shift+h": "openHome",
   "mod+,": "openSettings",
@@ -98,8 +96,7 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
   {
     title: "Tabs",
     actions: [
-      ["newTab", "New tab in the current folder"],
-      ["newTabIn", "Teleport to a session or folder"],
+      ["newTabIn", "Teleport: new tab in a folder (↩ for the current one) or a session"],
       ["newSession", "New Claude session in its own worktree"],
       ["closeTab", "Close pane or tab"],
       ["renameTab", "Rename tab"],
@@ -173,7 +170,7 @@ const NAMED_KEYS: Record<string, string> = {
   space: "Space",
 };
 
-/** A combo as the keys to press, e.g. "mod+shift+t" → ["⌘", "⇧", "T"]. */
+/** A combo as the keys to press, e.g. "mod+shift+d" → ["⌘", "⇧", "D"]. */
 export function comboKeys(combo: string): string[] {
   return normalize(combo)
     .split("+")

@@ -6,6 +6,7 @@ import { favoriteDirs, toggleFavorite } from "./favorites";
 import { kbd, kbdFor } from "./kbd";
 import { comboFromEvent } from "./shortcuts";
 import { AtSign, Bot, ChevronRight, Folder, History, House, Package, Star, Trash2, icon } from "./icons";
+import type { IconNode } from "lucide";
 import { showToast } from "./toast";
 
 interface Candidate {
@@ -51,8 +52,24 @@ interface Parsed {
   query: string;
 }
 
+/** Teleport's tabs, in Tab order. */
+export type TeleportTab = "directory" | "history" | "favorites" | "sessions";
+
+const TABS: { id: TeleportTab; label: string; icon: IconNode; placeholder: string }[] = [
+  { id: "directory", label: "Directory", icon: Folder, placeholder: "Teleport to a folder…  (~/ or / to browse, → to complete, @macro to run, #loadout to open)" },
+  { id: "history", label: "History", icon: History, placeholder: "Search recent folders…" },
+  { id: "favorites", label: "Favorites", icon: Star, placeholder: "Search favorite folders…" },
+  { id: "sessions", label: "Sessions", icon: Bot, placeholder: "Search sessions…" },
+];
+
 /** Teleport used to pick a folder for something else, like a ticket's branch. */
 export interface PickOptions {
+  /**
+   * The folder Directory starts in: filled in and highlighted, so Enter opens
+   * it and typing replaces it. Undefined (or resolving to it) means home.
+   * Leave the option out to start with an empty query.
+   */
+  cwd?: string | Promise<string | undefined>;
   /** Shown above the input, saying what the folder is for. */
   title?: Node | string;
   placeholder?: string;
@@ -61,10 +78,9 @@ export interface PickOptions {
 }
 
 const MAX_RESULTS = 50;
+const COMPLETE_COMBO = "arrowright";
 const FAVORITE_COMBO = "mod+d";
 const END_SESSION_COMBO = "mod+backspace";
-/** Sessions listed before any folder when nothing's typed yet. */
-const SESSIONS_UNFILTERED = 5;
 
 const homeReady = invoke<string>("home_dir").then((dir) => {
   setHome(dir);
@@ -97,13 +113,17 @@ function score(path: string, label: string, query: string): number {
 }
 
 /**
- * Teleport (⌘⇧T): palette for choosing where a new tab starts. With no query
- * it lists favorites, home and recent directories; plain text filters those
- * (plus folders in ~), favorites always first; ⌘D stars the highlighted folder; a query starting with `~` or `/` browses the filesystem, Tab
- * completing into the highlighted folder. A leading "@name" picks a macro whose
- * commands run in the new tab; "#name" opens a loadout instead of one tab.
- * Sessions come first: picking one picks it back up (or goes to its pane),
- * and ⌘⌫ ends it.
+ * Teleport (⌘T): palette for choosing where a new tab starts, in tabs that
+ * Tab / ⇧Tab cycle through:
+ * - Directory opens on the current folder (so ⌘T ↩ is a new tab right here).
+ *   With no query it lists favorites, home and recent directories; plain text
+ *   filters those (plus folders in ~), favorites always first; a query
+ *   starting with `~` or `/` browses the filesystem, → completing into the
+ *   highlighted folder. A leading "@name" picks a macro whose commands run in
+ *   the new tab; "#name" opens a loadout instead of one tab.
+ * - History and Favorites list just recent or starred folders.
+ * - Sessions: picking one picks it back up (or goes to its pane); ⌘⌫ ends it.
+ * ⌘D stars the highlighted folder in any of them.
  */
 export class DirPicker {
   /** Sessions to list; set once the app has them. */
@@ -113,6 +133,12 @@ export class DirPicker {
   private input!: HTMLInputElement;
   private list!: HTMLElement;
   private macroBar!: HTMLElement;
+  private tabBar!: HTMLElement;
+  private tab: TeleportTab = "directory";
+  /** What Directory was filled in with, while it's still untouched. */
+  private prefill = "";
+  /** The folder Teleport was opened from, marked in the list. */
+  private cwd = "";
   private items: Candidate[] = [];
   private selected = 0;
   private home = "";
@@ -140,6 +166,8 @@ export class DirPicker {
   ) {
     if (this.root) return this.input.focus();
     this.options = options;
+    this.tab = "directory";
+    this.prefill = this.cwd = "";
     this.onPick = onPick;
     this.onCancel = onCancel;
     this.onLoadout = onLoadout;
@@ -148,6 +176,7 @@ export class DirPicker {
     this.favorites = favoriteDirs();
     this.build();
     this.home = await homeReady.catch(() => "");
+    if ("cwd" in options) await this.fillCwd(options.cwd);
     void this.update();
 
     // Quietly forget recents that were deleted.
@@ -157,6 +186,17 @@ export class DirPicker {
       this.recents = recentDirs();
       if (this.root) void this.update();
     });
+  }
+
+  /** Starts Directory on `cwd` (home if it's unknown), unless something's been typed meanwhile. */
+  private async fillCwd(cwd: PickOptions["cwd"]) {
+    const dir = (await Promise.resolve(cwd).catch(() => undefined)) || this.home;
+    if (!this.root || !dir || this.input.value) return;
+    this.cwd = dir;
+    const label = this.tildify(dir);
+    this.prefill = label.endsWith("/") ? label : `${label}/`;
+    this.input.value = this.prefill;
+    this.input.select();
   }
 
   close(picked?: { dir: string; macro?: Macro } | { loadout: string } | { session: string }) {
@@ -185,12 +225,14 @@ export class DirPicker {
   private build() {
     const root = el("div", "dirpicker");
     this.input = el("input", "dirpicker-input");
-    this.input.placeholder = this.options.placeholder ?? "Teleport to a session or folder…  (~/ or / to browse, @macro to run, #loadout to open)";
     this.input.spellcheck = false;
     this.input.autocomplete = "off";
     this.list = el("div", "dirpicker-list");
     this.macroBar = el("div", "dirpicker-macro");
-    root.append(this.input, this.macroBar, this.list);
+    this.tabBar = el("div", "dirpicker-tabs");
+    this.tabBar.addEventListener("mousedown", (e) => e.preventDefault());
+    root.append(this.input, this.tabBar, this.macroBar, this.list);
+    this.renderTabs();
     if (this.options.title) {
       const title = el("div", "dirpicker-title");
       title.append(this.options.title);
@@ -216,7 +258,8 @@ export class DirPicker {
     const ctrl = e.ctrlKey && !e.metaKey;
     if (e.key === "ArrowDown" || (ctrl && e.key === "n")) this.move(1);
     else if (e.key === "ArrowUp" || (ctrl && e.key === "p")) this.move(-1);
-    else if (e.key === "Tab") this.complete();
+    else if (e.key === "Tab") this.cycleTab(e.shiftKey ? -1 : 1);
+    else if (comboFromEvent(e) === COMPLETE_COMBO && this.caretAtEnd() && this.completable()) this.complete();
     else if (e.key === "Enter") this.pick();
     else if (e.key === "Escape") this.close();
     else if (comboFromEvent(e) === FAVORITE_COMBO) this.toggleFavorite(this.items[this.selected]);
@@ -224,6 +267,61 @@ export class DirPicker {
     else return;
     // Also keeps Enter/Escape from landing in the terminal we refocus.
     e.preventDefault();
+  }
+
+  private visibleTabs() {
+    const sessions = !!this.sessions && !this.options.plain;
+    return TABS.filter((t) => t.id !== "sessions" || sessions);
+  }
+
+  private cycleTab(delta: number) {
+    const tabs = this.visibleTabs();
+    const i = tabs.findIndex((t) => t.id === this.tab);
+    this.switchTab(tabs[(i + delta + tabs.length) % tabs.length].id);
+  }
+
+  /**
+   * Shows `tab`, keeping what's typed as its filter, except the untouched
+   * current folder, which only Directory starts on.
+   */
+  private switchTab(tab: TeleportTab) {
+    if (tab === this.tab) return;
+    if (this.prefill && this.input.value === this.prefill) this.input.value = "";
+    this.tab = tab;
+    if (tab === "directory" && this.prefill && !this.input.value) {
+      this.input.value = this.prefill;
+      this.input.select();
+    }
+    this.renderTabs();
+    void this.update();
+  }
+
+  private renderTabs() {
+    const tabs = this.visibleTabs();
+    const current = TABS.find((t) => t.id === this.tab)!;
+    this.input.placeholder = this.options.placeholder ?? current.placeholder;
+    this.tabBar.hidden = tabs.length < 2;
+    const buttons = tabs.map((t) => {
+      const button = el("button", `dirpicker-tab${t.id === this.tab ? " active" : ""}`);
+      button.tabIndex = -1;
+      button.append(icon(t.icon, 13), t.label);
+      button.addEventListener("click", () => this.switchTab(t.id));
+      return button;
+    });
+    const hint = el("span", "dirpicker-tabs-hint");
+    hint.append(kbd("tab"), " to switch");
+    this.tabBar.replaceChildren(...buttons, hint);
+  }
+
+  /** The caret sits at the end of the input with nothing selected, so → has nowhere to go. */
+  private caretAtEnd() {
+    const { selectionStart, selectionEnd, value } = this.input;
+    return selectionStart === value.length && selectionEnd === value.length;
+  }
+
+  private completable() {
+    const item = this.items[this.selected];
+    return !!item && item.kind !== "session";
   }
 
   private move(delta: number) {
@@ -292,7 +390,7 @@ export class DirPicker {
 
   private parse(): Parsed {
     const raw = this.input.value;
-    if (this.options.plain) return { loadout: null, macro: null, naming: false, prefix: "", query: raw.trim() };
+    if (this.options.plain || this.tab === "sessions") return { loadout: null, macro: null, naming: false, prefix: "", query: raw.trim() };
     const hash = /^\s*#(\S*)/.exec(raw);
     if (hash) return { loadout: hash[1], macro: null, naming: false, prefix: hash[0], query: "" };
     const m = /^\s*@(\S*)(\s+)?/.exec(raw);
@@ -338,12 +436,12 @@ export class DirPicker {
         ? this.loadoutCandidates(parsed.loadout)
         : parsed.naming
           ? this.macroCandidates(parsed.macro!)
-          : await this.search(parsed.query);
+          : await this.tabCandidates(parsed.query);
     if (seq !== this.seq || !this.root) return;
     this.items = items.slice(0, MAX_RESULTS);
     this.selected = Math.max(0, keep == null ? 0 : this.items.findIndex((c) => c.path === keep && c.kind !== "macro" && c.kind !== "session"));
     this.renderMacro(parsed);
-    this.render(parsed.loadout != null ? "loadout" : parsed.naming ? "macro" : "dir");
+    this.render(parsed.loadout != null ? "loadout" : parsed.naming ? "macro" : this.tab, parsed.query);
   }
 
   /** Loadouts whose name starts with (then contains) the typed text. */
@@ -381,12 +479,11 @@ export class DirPicker {
     }
   }
 
-  /** Sessions matching `query` (all of them, recent first, when it's empty), unless a macro's being picked. */
+  /** Sessions matching `query` (all of them, recent first, when it's empty). */
   private sessionCandidates(query: string): Candidate[] {
-    if (!this.sessions || this.options.plain || this.parse().macro != null) return [];
-    if (query.startsWith("/") || query.startsWith("~")) return [];
+    if (!this.sessions) return [];
     const all = this.sessions.list();
-    if (!query) return all.slice(0, SESSIONS_UNFILTERED).map((s) => ({ path: s.id, kind: "session" }));
+    if (!query) return all.map((s) => ({ path: s.id, kind: "session" }));
     return all
       .map((s, i) => ({ s, i, score: score(s.label, `${s.label} ${s.detail}`, query) }))
       .filter((r) => r.score > 0)
@@ -394,8 +491,35 @@ export class DirPicker {
       .map((r) => ({ path: r.s.id, kind: "session" }));
   }
 
-  private async search(query: string): Promise<Candidate[]> {
-    return [...this.sessionCandidates(query), ...(await this.searchDirs(query))];
+  /** What the current tab lists for `query`. */
+  private async tabCandidates(query: string): Promise<Candidate[]> {
+    const favs = new Set(this.favorites);
+    switch (this.tab) {
+      case "directory":
+        return this.searchDirs(query);
+      case "history":
+        return this.rank(
+          this.recents.map((path) => ({ path, kind: favs.has(path) ? "favorite" : "recent" })),
+          query,
+        );
+      case "favorites":
+        return this.rank(
+          this.favorites.map((path) => ({ path, kind: "favorite" })),
+          query,
+        );
+      case "sessions":
+        return this.sessionCandidates(query);
+    }
+  }
+
+  /** Folders matching `query`, best first, list order breaking ties. */
+  private rank(candidates: Candidate[], query: string): Candidate[] {
+    if (!query) return candidates;
+    return candidates
+      .map((c, i) => ({ c, i, s: score(c.path, this.tildify(c.path), query) }))
+      .filter((r) => r.s > 0)
+      .sort((a, b) => b.s - a.s || a.i - b.i)
+      .map((r) => r.c);
   }
 
   private async searchDirs(query: string): Promise<Candidate[]> {
@@ -497,7 +621,7 @@ export class DirPicker {
     return list;
   }
 
-  private render(listing: "dir" | "macro" | "loadout") {
+  private render(listing: TeleportTab | "macro" | "loadout", query: string) {
     const rows = this.items.map((item, i) => {
       const row =
         item.kind === "macro"
@@ -519,13 +643,13 @@ export class DirPicker {
       return row;
     });
     if (rows.length === 0) {
-      const text = {
-        dir: "No matching folders",
-        macro: "No matching macros. Add one in Settings ",
-        loadout: "No matching loadouts. Save a group as one from its menu, or add one in Settings ",
-      }[listing];
-      const empty = el("div", "dirpicker-empty", text);
-      if (listing !== "dir") empty.append(kbdFor("openSettings"));
+      const empty = el("div", "dirpicker-empty");
+      if (listing === "macro") empty.append("No matching macros. Add one in Settings ", kbdFor("openSettings"));
+      else if (listing === "loadout") empty.append("No matching loadouts. Save a group as one from its menu, or add one in Settings ", kbdFor("openSettings"));
+      else if (listing === "directory") empty.append("No matching folders");
+      else if (listing === "history") empty.append(query ? "No matching recent folders" : "No recent folders yet");
+      else if (listing === "favorites") empty.append(query ? "No matching favorites" : "No favorites yet. Star a folder with ", ...(query ? [] : [kbd(FAVORITE_COMBO)]));
+      else empty.append(query ? "No matching sessions" : "No sessions yet. Start one with ", ...(query ? [] : [kbdFor("newSession")]));
       rows.push(empty);
     }
     this.list.replaceChildren(...rows);
@@ -551,7 +675,7 @@ export class DirPicker {
       // LRMs keep the rtl ellipsis trick from moving the slashes around.
       el("span", "dirpicker-parent", slash > 0 ? `\u200e${label.slice(0, slash + 1)}\u200e` : ""),
       el("span", "dirpicker-name", slash > 0 ? label.slice(slash + 1) : label),
-      el("span", "dirpicker-kind", item.kind === "dir" ? "" : item.kind),
+      el("span", "dirpicker-kind", item.path === this.cwd ? "current folder" : item.kind === "dir" ? "" : item.kind),
       star,
     );
     return row;

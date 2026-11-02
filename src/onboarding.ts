@@ -286,7 +286,8 @@ async function basicsStory(d: Desk, chapter: (id: string) => void) {
   // A new tab, in the same folder.
   chapter("tabs");
   await d.wait(500);
-  await d.press(pressFor("newTab"));
+  await d.press(pressFor("newTabIn"));
+  await d.press(kbd("enter"));
   const tab = d.row("zsh", { active: true, enter: true });
   const second = d.freshPanes("~/Projects/workdesk");
   await d.wait(400);
@@ -456,7 +457,14 @@ const BASICS: Feature[] = [
     text: "A full shell in every tab. Search its output, and ⌘-click a file path to open it in your editor.",
     ...actionKeys("findInTerminal"),
   },
-  { id: "tabs", name: "Tabs", icon: Plus, text: "New tabs open in the folder you're already in.", ...actionKeys("newTab") },
+  {
+    id: "tabs",
+    name: "Tabs",
+    icon: Plus,
+    text: "Open Teleport and press Enter: the new tab opens in the folder you're already in.",
+    keys: () => [kbdFor("newTabIn"), kbd("enter")],
+    combos: () => combosFor(keymap(), "newTabIn"),
+  },
   {
     id: "split",
     name: "Split panes",

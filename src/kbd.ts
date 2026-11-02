@@ -16,7 +16,7 @@ export function kbdKeys(keys: string[]): HTMLElement {
   return group;
 }
 
-/** A combo string such as "mod+shift+t". */
+/** A combo string such as "mod+shift+d". */
 export function kbd(combo: string): HTMLElement {
   return kbdKeys(comboKeys(combo));
 }
