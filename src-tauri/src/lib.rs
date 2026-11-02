@@ -157,6 +157,8 @@ pub fn run() {
             tickets::tickets_disconnect,
             tickets::tickets_list,
             tickets::tickets_pulls,
+            tickets::tickets_targets,
+            tickets::tickets_create,
             tickets::tickets_branch_pull,
             worktrees::worktree_start,
             worktrees::worktree_remove,

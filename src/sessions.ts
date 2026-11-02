@@ -94,13 +94,14 @@ export function claudeStart(s: Session, withPrompt: boolean): string {
 export const claudeResume = (s: Session) => `claude --resume ${s.id}`;
 
 function closesLine(t: Ticket): string {
+  if (t.provider === "workdesk") return `Mention ${t.id} in the pull request's description.`;
   return t.provider === "github"
     ? `Put "Closes ${t.id}" in the pull request's description, so merging it closes the issue.`
     : `Mention ${t.id} in the pull request's title and description, so ${t.provider === "linear" ? "Linear" : "ClickUp"} links them.`;
 }
 
 function ticketBlock(t: Ticket): string[] {
-  return [`# ${t.id}: ${t.title}`, `${t.url}`, ``, t.body?.trim() || "(The ticket has no description.)"];
+  return [`# ${t.id}: ${t.title}`, ...(t.url ? [t.url] : []), ``, t.body?.trim() || "(The ticket has no description.)"];
 }
 
 /** The brief Claude starts with: the ticket, and how to finish it. */
