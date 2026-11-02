@@ -294,15 +294,16 @@ export class HomePage extends Page {
       if (!last) rule.append(icon(ArrowRight, 12));
       h.append(el("span", "home-lane-name", name), count, rule);
       section.append(h);
-      return { section, count };
+      return { section, count, head: h };
     };
     const backlog = lane("backlog", "Backlog");
     const agents = lane("agents", "With an agent");
     const pulls = lane("pulls", "Pull requests", true);
 
     // The backlog's search and filters stay put while its list redraws.
+    // One field: active filters sit in it as chips, with the Filter button at its end.
     const tools = el("div", "home-tools");
-    const search = el("label", "home-search");
+    const search = el("div", "home-search");
     const input = el("input", "");
     input.type = "search";
     input.placeholder = "Search tickets";
@@ -314,32 +315,43 @@ export class HomePage extends Page {
       this.page = 0;
       this.renderBacklog();
     });
-    search.append(icon(Search, 13), input);
     const filter = el("button", "home-filter");
     filter.title = "Filter the backlog";
     filter.setAttribute("aria-haspopup", "dialog");
     filter.addEventListener("click", () => this.openFilters(filter));
+    const chips = el("div", "home-chips");
+    search.append(icon(Search, 13), chips, input, filter);
+    // A click on the field's bare background types into it, as a label would.
+    search.addEventListener("mousedown", (ev) => {
+      if (ev.target !== search && ev.target !== chips) return;
+      ev.preventDefault();
+      input.focus();
+    });
+    tools.append(search);
+
+    // Refresh and New ride on the lane's heading, out of the search's way.
     const reload = el("button", "home-reload");
     reload.title = "Refresh the backlog";
     reload.setAttribute("aria-label", "Refresh the backlog");
-    reload.append(icon(RotateCcw, 13));
+    reload.append(icon(RotateCcw, 12));
     reload.addEventListener("click", () => this.source.refresh(true));
     const write = el("button", "home-write");
     write.title = "Write a ticket in Workdesk, GitHub or ClickUp";
     write.setAttribute("aria-label", "New ticket");
     const writeHint = el("span", "hold-hint");
     writeHint.append(kbdFor("newTicket"));
-    write.append(icon(Plus, 14), "New", writeHint);
+    write.append(icon(Plus, 12), "New", writeHint);
     write.addEventListener("click", () => this.openComposer());
-    tools.append(search, filter, reload, write);
-    const chips = el("div", "home-chips");
+    const actions = el("span", "home-lane-actions");
+    actions.append(reload, write);
+    backlog.head.append(actions);
     const errors = el("div", "home-errors");
     const selection = el("div", "home-selection");
     selection.hidden = true;
     const backlogList = el("div", "home-list");
     const pager = el("div", "home-pager");
     pager.hidden = true;
-    backlog.section.append(tools, chips, errors, selection, backlogList, pager);
+    backlog.section.append(tools, errors, selection, backlogList, pager);
     const agentBox = el("div", "home-lane-body");
     agents.section.append(agentBox);
     const pullBox = el("div", "home-lane-body");
@@ -692,8 +704,9 @@ export class HomePage extends Page {
     const n = this.activeCount();
     if (this.shown.filter !== String(n)) {
       this.shown.filter = String(n);
-      e.filter.replaceChildren(icon(ListFilter, 14), "Filter");
+      e.filter.replaceChildren(icon(ListFilter, 13));
       if (n) e.filter.append(el("span", "home-filter-count", String(n)));
+      e.filter.setAttribute("aria-label", n ? `Filter the backlog, ${n} on` : "Filter the backlog");
       e.filter.classList.toggle("active", n > 0);
     }
     this.renderChips();
