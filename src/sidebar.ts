@@ -157,7 +157,8 @@ export class Sidebar {
   private newTabRow() {
     const row = el("button", "new-tab-row");
     const hint = el("span", "tab-hint");
-    hint.append(kbdFor("newTab"));
+    // ⌘T then ↩ opens Teleport on the current folder, same as this row.
+    hint.append(kbdFor("newTabIn"));
     row.append(icon(Plus, 13), el("span", "tab-title", "New tab"), hint);
     row.addEventListener("click", (e) => {
       e.stopPropagation();

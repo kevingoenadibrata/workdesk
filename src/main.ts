@@ -460,7 +460,11 @@ async function quit(command: "quit_app" | "close_main_window") {
   if (await confirmClose(ws.allSessions, "Workdesk", "Quit")) void invoke(command);
 }
 
-/** Teleport: asks which directory to start in (and which macro to run), then opens a tab there. */
+/**
+ * Teleport (⌘T): asks which directory to start in (and which macro to run),
+ * then opens a tab there. It starts on the focused pane's folder, so ⌘T ↩
+ * opens a tab right where you are.
+ */
 function newTabIn() {
   void dirPicker.open(
     (dir, macro) => {
@@ -471,6 +475,7 @@ function newTabIn() {
       if (!Page.current) focusTerminal();
     },
     deployLoadout,
+    { cwd: currentCwd() },
   );
 }
 
@@ -677,7 +682,6 @@ $("#tablist").addEventListener(
 );
 
 const handlers: Record<Action, () => void> = {
-  newTab: () => void newTab(),
   newTabIn,
   newSession,
   openHome: () => homePage.toggle(),

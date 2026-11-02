@@ -126,6 +126,8 @@ picker.sessions = {
 void picker.open(
   () => {},
   () => {},
+  undefined,
+  { cwd: "/Users/me/Projects/workdesk" },
 );
 
 // ?ticket opens the first pane's ticket panel.
