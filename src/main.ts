@@ -427,6 +427,7 @@ const sessionBarActions: SessionBarActions = {
   },
   sendBrief,
   openUrl: (url) => void openUrl(url),
+  revealFile: (path) => void revealItemInDir(path),
   ticketDetails,
 };
 

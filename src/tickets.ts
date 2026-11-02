@@ -145,6 +145,31 @@ export function isSavedImage(path: string): boolean {
   return /^\/\S*\/\.workdesk\/attachments\/\S+$/.test(path);
 }
 
+/**
+ * A markdown image hook showing images pasted into Workdesk's own tickets as
+ * thumbnails read from disk, each revealed in Finder on click. Other images stay links.
+ */
+export function savedImageHook(reveal: (path: string) => void) {
+  return (src: string, alt: string): HTMLElement | null => {
+    if (!isSavedImage(src)) return null;
+    const name = src.split("/").pop() ?? src;
+    const b = el("button", "home-modal-image");
+    b.title = `${src}\nClick to show it in Finder`;
+    const img = el("img", "");
+    img.alt = alt || name;
+    b.append(img);
+    b.addEventListener("click", () => reveal(src));
+    ticketImages.url(src).then(
+      (url) => {
+        img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+        img.src = url;
+      },
+      () => b.replaceChildren(el("span", "home-modal-image-gone", `Image not found: ${name}`)),
+    );
+    return b;
+  };
+}
+
 /** The saved images a description links to, in order, each once. */
 export function savedImages(body: string): string[] {
   const paths = [...body.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter(isSavedImage);

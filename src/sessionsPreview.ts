@@ -62,6 +62,7 @@ const actions: SessionBarActions = {
   detachTicket: log("detach"),
   sendBrief: log("brief"),
   openUrl: (url) => console.log("open", url),
+  revealFile: (path) => console.log("reveal file", path),
   ticketDetails: (s) => ({
     ...s.ticket!,
     project: "workdesk",

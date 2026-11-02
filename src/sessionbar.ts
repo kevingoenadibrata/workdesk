@@ -16,6 +16,8 @@ export interface SessionBarActions {
   detachTicket(session: Session): void;
   sendBrief(session: Session): void;
   openUrl(url: string): void;
+  /** Shows a file in Finder. */
+  revealFile(path: string): void;
   /** The session's ticket in full (description, status) when the ticket list has it. */
   ticketDetails(session: Session): TicketData;
 }
@@ -49,6 +51,7 @@ function ticketView(pane: TermSession, session: Session, actions: SessionBarActi
       actions.detachTicket(session);
     },
     openUrl: actions.openUrl,
+    revealFile: actions.revealFile,
   };
 }
 
