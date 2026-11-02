@@ -168,6 +168,8 @@ pub fn run() {
             files::resolve_files,
             files::open_in_editor,
             files::save_drop,
+            files::save_ticket_image,
+            files::read_ticket_image,
             files::show_in_finder,
             git::git_status,
             git::git_branches,

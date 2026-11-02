@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { Agent } from "./monitor";
 import { showToast } from "./toast";
-import type { Provider, Ticket } from "./tickets";
+import { savedImages, type Provider, type Ticket } from "./tickets";
 
 /**
  * Sessions: Claude Code at work in its own git worktree, optionally on a
@@ -110,7 +110,18 @@ function closesLine(t: Ticket): string {
 }
 
 function ticketBlock(t: Ticket): string[] {
-  return [`# ${t.id}: ${t.title}`, ...(t.url ? [t.url] : []), ``, t.body?.trim() || "(The ticket has no description.)"];
+  const body = t.body?.trim() ?? "";
+  const images = savedImages(body);
+  return [
+    `# ${t.id}: ${t.title}`,
+    ...(t.url ? [t.url] : []),
+    ``,
+    body || "(The ticket has no description.)",
+    // Pasted images are files on this Mac; say so plainly, so Claude opens them.
+    ...(images.length
+      ? [``, `## Images`, ``, `The ticket has ${images.length === 1 ? "an image" : `${images.length} images`}, saved on disk. Read ${images.length === 1 ? "it" : "each one"} with the Read tool before starting:`, ``, ...images.map((p) => `- ${p}`)]
+      : []),
+  ];
 }
 
 /** The brief Claude starts with: the ticket, and how to finish it. */

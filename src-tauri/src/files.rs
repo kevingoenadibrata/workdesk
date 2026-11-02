@@ -173,10 +173,65 @@ pub fn save_drop(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     };
     let name = request.headers().get("x-name").and_then(|v| v.to_str().ok()).map(decode).unwrap_or_default();
     let name = Path::new(&name).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty()).unwrap_or("dropped").to_string();
+    save_in(&std::env::temp_dir().join("workdesk-drops"), &name, bytes)
+}
+
+/// Writes `bytes` as `name` in a fresh folder under `root`, so names never clash, and returns the path.
+fn save_in(root: &Path, name: &str, bytes: &[u8]) -> Result<String, String> {
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let dir = std::env::temp_dir().join("workdesk-drops").join(stamp.to_string());
+    let dir = root.join(stamp.to_string());
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(name);
     std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
-    path.into_os_string().into_string().map_err(|_| "non-UTF-8 temp path".into())
+    path.into_os_string().into_string().map_err(|_| "non-UTF-8 path".into())
+}
+
+/// Where images pasted into Workdesk's own tickets are kept.
+fn attachments_dir() -> PathBuf {
+    Path::new(&home()).join(".workdesk/attachments")
+}
+
+/// `name` with only letters, digits, `.`, `_` and `-`, so its path reads as one Markdown link target.
+fn plain_name(name: &str) -> String {
+    let s: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '-' }).collect();
+    let s = s.trim_matches(|c| c == '.' || c == '-').to_string();
+    if s.is_empty() { "image.png".into() } else { s }
+}
+
+/// Saves an image pasted into a Workdesk ticket (raw body, its name
+/// percent-encoded in `x-name`) under ~/.workdesk/attachments, and returns
+/// the path. The ticket links it there, and Claude is told to read it.
+#[tauri::command]
+pub fn save_ticket_image(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected raw image contents".into());
+    };
+    let name = request.headers().get("x-name").and_then(|v| v.to_str().ok()).map(decode).unwrap_or_default();
+    let name = plain_name(Path::new(&name).file_name().and_then(|n| n.to_str()).unwrap_or_default());
+    save_in(&attachments_dir(), &name, bytes)
+}
+
+/// The bytes of an image saved by `save_ticket_image`, for showing it in a
+/// ticket. Paths outside ~/.workdesk/attachments are refused.
+#[tauri::command]
+pub fn read_ticket_image(path: String) -> Result<tauri::ipc::Response, String> {
+    let root = attachments_dir().canonicalize().map_err(|_| "No images saved yet".to_string())?;
+    let real = Path::new(&path).canonicalize().map_err(|_| format!("{path} is gone"))?;
+    if !real.starts_with(&root) {
+        return Err(format!("{path} isn't a ticket image"));
+    }
+    std::fs::read(&real).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plain_name;
+
+    #[test]
+    fn plain_names_have_no_spaces_or_brackets() {
+        assert_eq!(plain_name("Screenshot 2026-11-02 at 10.00.00.png"), "Screenshot-2026-11-02-at-10.00.00.png");
+        assert_eq!(plain_name("a(b).png"), "a-b-.png");
+        assert_eq!(plain_name(""), "image.png");
+        assert_eq!(plain_name(".."), "image.png");
+    }
 }

@@ -6,6 +6,25 @@ get lost, what each service allows, and a plan in three steps. The steps are
 ordered by how much they help the agent, which is the point of a ticket in
 Workdesk.
 
+## Decision: Workdesk tickets first
+
+The user chose to start with Workdesk's own tickets only. This PR builds that:
+
+- **Paste or drop an image into the composer** for a Workdesk ticket. It's
+  saved to `~/.workdesk/attachments/<stamp>/<name>` (`save_ticket_image` in
+  `src-tauri/src/files.rs`). An `![name](path)` line goes in at the cursor.
+  GitHub and ClickUp tickets refuse images with a message, since the image
+  would only exist on this Mac.
+- **Claude is told the paths.** `ticketBlock` in `src/sessions.ts` adds an
+  "Images" section listing each saved image and asking Claude to read them
+  with the Read tool before starting.
+- **The ticket modal shows them** as thumbnails, read back with
+  `read_ticket_image`, which only serves files under `~/.workdesk/attachments`.
+  Clicking a thumbnail shows the file in Finder.
+
+Not done yet: deleting a ticket leaves its images on disk. Images in GitHub,
+Linear and ClickUp tickets are covered by the rest of this note.
+
 ## Where images are lost today
 
 | Step | What happens to an image | Where |
