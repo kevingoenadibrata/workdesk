@@ -5089,7 +5089,6 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 .pane-status {
   display: flex;
   flex: none;
-  justify-content: flex-end;
   align-items: center;
   gap: 6px;
   /* As tall as the sidebar's footer (6px + 30px button + 6px), so their top lines meet. */
