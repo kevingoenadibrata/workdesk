@@ -192,7 +192,6 @@ export class HomePage extends Page {
   private closeMenu: (() => void) | null = null;
   /** Built cards by key, with the signature they were built from. */
   private cards = new Map<string, { sig: string; el: HTMLElement }>();
-  private flash: { el: HTMLElement; timer?: number } | null = null;
   /** The page's scroller. */
   private scroller: HTMLElement | null = null;
   /** What the filter button, chips and errors last showed, so they're only redrawn when that changes. */
@@ -269,9 +268,6 @@ export class HomePage extends Page {
     side.append(usage.root, this.serversTile);
     head.append(text, side);
 
-    this.flash = { el: el("div", "home-flash") };
-    this.flash.el.hidden = true;
-
     const lane = (key: string, name: string, last = false) => {
       const section = el("section", "home-lane");
       section.dataset.lane = key;
@@ -331,7 +327,7 @@ export class HomePage extends Page {
     const lanes = el("div", "home-lanes");
     lanes.append(backlog.section, agents.section, pulls.section);
     const empty = el("div", "home-connect");
-    root.append(head, this.flash.el, empty, lanes);
+    root.append(head, empty, lanes);
     body.append(root);
     this.scroller = body.parentElement;
     this.shown = { filter: "", chips: "", errors: "" };
@@ -422,33 +418,11 @@ export class HomePage extends Page {
     });
   }
 
-  /** Says what happened. An error stays, with its fixes, until one is clicked or it's dismissed. */
+  /** Says what happened, in a toast. An error stays, with its fixes, until one is clicked or it's dismissed. */
   private showFlash(message: string, error = false, fixes: Fix[] = []) {
-    const f = this.flash;
-    if (!f || !message) return;
-    clearTimeout(f.timer);
-    const hide = () => (f.el.hidden = true);
-    f.el.replaceChildren(el("span", "home-flash-text", message));
-    if (error) {
-      const actions = el("span", "home-fixes");
-      for (const fix of fixes) {
-        const b = el("button", "home-fix", fix.label);
-        b.addEventListener("click", () => {
-          hide();
-          fix.run();
-        });
-        actions.append(b);
-      }
-      const x = el("button", "home-flash-x");
-      x.title = "Dismiss";
-      x.setAttribute("aria-label", "Dismiss");
-      x.append(icon(X, 13));
-      x.addEventListener("click", hide);
-      actions.append(x);
-      f.el.append(actions);
-    } else f.timer = window.setTimeout(hide, 3500);
-    f.el.classList.toggle("error", error);
-    f.el.hidden = false;
+    if (!message) return;
+    if (error) showToast(message, 0, fixes, { error: true });
+    else showToast(message, 3500);
   }
 
   /** Flashes how `p` went; if it failed, with a way to fix it or `retry`. */

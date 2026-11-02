@@ -10,6 +10,7 @@ export {
   Bot,
   CaseSensitive,
   Check,
+  CircleAlert,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
