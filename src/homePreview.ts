@@ -281,6 +281,13 @@ const source: HomeSource = {
     runs.delete(run.id);
     return run.pull?.state === "MERGED" ? `Removed the worktree and ${run.branch}` : `Removed the worktree; kept ${run.branch}, which isn't merged`;
   },
+  endMergedSessions: async () => {
+    await new Promise((r) => setTimeout(r, 300));
+    const merged = runs.all.filter((r) => r.pull?.state === "MERGED");
+    for (const r of merged) runs.delete(r.id);
+    emit();
+    return `Ended ${merged.length} merged session${merged.length === 1 ? "" : "s"}`;
+  },
   jumpTo: (a) => console.log("jump to", a.tabTitle),
   openUrl: (url) => console.log("open", url),
   openSettings: () => console.log("settings"),

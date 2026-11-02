@@ -31,6 +31,8 @@ export interface BranchPull {
   title: string;
   state: "OPEN" | "MERGED" | "CLOSED";
   draft: boolean;
+  /** When it was merged (ISO 8601); missing on PRs read before Workdesk asked for it. */
+  mergedAt?: string | null;
 }
 
 export const sessionsApi = {
@@ -80,6 +82,13 @@ export const ticketKey = (t: { provider: Provider; id: string }) => `${t.provide
 
 /** What to call a session: its ticket's id, else its name. */
 export const sessionLabel = (s: Session) => s.ticket?.id ?? s.name;
+
+/** When `s`'s pull request was merged (ms since the epoch), or null if it isn't, or that isn't known yet. */
+export function mergedAt(s: Session): number | null {
+  if (s.pull?.state !== "MERGED" || !s.pull.mergedAt) return null;
+  const t = Date.parse(s.pull.mergedAt);
+  return Number.isNaN(t) ? null : t;
+}
 
 /** Single-quoted for the shell. */
 export const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -291,11 +300,10 @@ export class SessionStore {
     this.observe();
   }
 
-  /** Re-reads every unfinished session's pull request. */
+  /** Re-reads every unfinished session's pull request, and merged ones' that don't say when yet. */
   async checkPulls() {
-    await Promise.all(
-      [...this.sessions.values()].filter((s) => s.pull?.state !== "MERGED" && s.pull?.state !== "CLOSED").map((s) => this.checkPull(s)),
-    );
+    const stale = (s: Session) => (s.pull?.state === "MERGED" ? !s.pull.mergedAt : s.pull?.state !== "CLOSED");
+    await Promise.all([...this.sessions.values()].filter(stale).map((s) => this.checkPull(s)));
   }
 
   private async checkPull(session: Session) {
@@ -325,7 +333,7 @@ export class SessionStore {
       const name = s.ticket ? `${s.ticket.id} · ${s.ticket.title}` : `${s.name} · ${s.repo}`;
       const pr = s.pull ? `#${s.pull.number}` : "";
       if (now === "waiting") this.notify(`${label} needs you`, `Claude is waiting for an answer.\n${name}`, s);
-      else if (now === "merged") this.notify(`${pr} merged`, `${name}\nEnd the session to remove its worktree.`, s);
+      else if (now === "merged") this.notify(`${pr} merged`, `${name}\nIts worktree goes in a day, or end the session now.`, s);
       else if (now === "pr" && before !== "pr") this.notify(`${label}: opened ${pr}`, s.pull!.title, s);
       else if (now === "idle" && before === "working") this.notify(`${label}: Claude stopped`, `No pull request yet.\n${name}`, s);
     }

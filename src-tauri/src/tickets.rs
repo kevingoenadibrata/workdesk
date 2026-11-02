@@ -500,6 +500,9 @@ pub struct BranchPull {
     /// "OPEN", "MERGED" or "CLOSED".
     state: String,
     draft: bool,
+    /// When it was merged (ISO 8601), if it was.
+    #[serde(rename = "mergedAt")]
+    merged_at: Option<String>,
 }
 
 /// "owner/name" of a GitHub remote URL, in any of its forms.
@@ -523,7 +526,7 @@ pub async fn tickets_branch_pull(dir: String, branch: String) -> Result<Option<B
     let (t, _) = tauri::async_runtime::spawn_blocking(|| token(Provider::Github)).await.ok().flatten().ok_or_else(|| missing(Provider::Github))?;
     let query = r#"query($owner: String!, $name: String!, $branch: String!) {
         repository(owner: $owner, name: $name) { pullRequests(headRefName: $branch, first: 1, orderBy: { field: CREATED_AT, direction: DESC }) {
-            nodes { number url title state isDraft } } } }"#;
+            nodes { number url title state isDraft mergedAt } } } }"#;
     let req = client()
         .post("https://api.github.com/graphql")
         .bearer_auth(&t)
@@ -539,6 +542,7 @@ pub async fn tickets_branch_pull(dir: String, branch: String) -> Result<Option<B
         title: str_at(n, "/title"),
         state: str_at(n, "/state"),
         draft: n["isDraft"].as_bool().unwrap_or_default(),
+        merged_at: n["mergedAt"].as_str().map(str::to_string),
     }))
 }
 

@@ -45,6 +45,8 @@ export interface HomeSource {
   openSession(session: Session): void;
   /** Closes the session's pane and removes its worktree; resolves "" if the pane was kept. */
   endSession(session: Session): Promise<string>;
+  /** Ends every session whose PR is merged; resolves what it did. */
+  endMergedSessions(): Promise<string>;
   jumpTo(agent: Agent): void;
   openUrl(url: string): void;
   openSettings(): void;
@@ -402,8 +404,15 @@ export class HomePage extends Page {
     return node;
   }
 
-  private group(key: string, label: string, color: string | null, children: HTMLElement[]): HTMLElement {
-    const g = this.card(`group:${key}`, label + color, () => {
+  /** A labelled list of cards, with a button at the label's end if `action` is given. */
+  private group(
+    key: string,
+    label: string,
+    color: string | null,
+    children: HTMLElement[],
+    action?: { label: string; title: string; run: (button: HTMLButtonElement) => void },
+  ): HTMLElement {
+    const g = this.card(`group:${key}`, label + color + (action ? action.label + action.title : ""), () => {
       const g = el("div", "home-group");
       const l = el("div", "home-group-label");
       if (color) {
@@ -412,6 +421,13 @@ export class HomePage extends Page {
         l.append(dot);
       }
       l.append(label);
+      if (action) {
+        const b = el("button", "home-cleanup home-group-action");
+        b.append(icon(Trash2, 12), action.label);
+        b.title = action.title;
+        b.addEventListener("click", () => action.run(b));
+        l.append(b);
+      }
       g.append(l, el("div", "home-list"));
       return g;
     });
@@ -1428,7 +1444,22 @@ export class HomePage extends Page {
     if (error) parts.push(this.card("pull-error", error, () => this.errorRow("github", error)));
     if (!runs.length) parts.push(this.empty("No pull requests yet", "When a session's agent opens one, the session moves here."));
     if (open.length) parts.push(this.group("open", "Open", null, open.map(card)));
-    if (done.length) parts.push(this.group("done", "Merged or closed", "var(--merged)", done.map(card)));
+    const merged = done.filter((r) => r.run.pull!.state === "MERGED").length;
+    const endAll =
+      merged > 0
+        ? {
+            label: merged === 1 ? "End merged" : `End all ${merged} merged`,
+            title: "End every merged session: close its pane and remove its worktree and branch. Sessions merged over a day ago end on their own.",
+            run: (b: HTMLButtonElement) => {
+              const go = () => {
+                b.disabled = true;
+                void this.report(this.source.endMergedSessions(), go).finally(() => (b.disabled = false));
+              };
+              go();
+            },
+          }
+        : undefined;
+    if (done.length) parts.push(this.group("done", "Merged or closed", "var(--merged)", done.map(card), endAll));
     sync(e.pulls, parts);
   }
 
@@ -1501,6 +1532,7 @@ export function liveHomeSource(
     | "startBranch"
     | "openSession"
     | "endSession"
+    | "endMergedSessions"
     | "jumpTo"
     | "openUrl"
     | "openSettings"
