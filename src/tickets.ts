@@ -127,6 +127,30 @@ export const ticketsApi = {
   create: (provider: Service, target: string, title: string, body: string) => invoke<Ticket>("tickets_create", { provider, target, title, body }),
 };
 
+// ---- images pasted into Workdesk's own tickets ----
+
+/** Images pasted into a Workdesk ticket: files under ~/.workdesk/attachments, linked from the description by path. */
+export const ticketImages = {
+  /** Saves a pasted image to disk and resolves its path. */
+  save: async (file: File) =>
+    invoke<string>("save_ticket_image", new Uint8Array(await file.arrayBuffer()), {
+      headers: { "x-name": encodeURIComponent(file.name || "image.png") },
+    }),
+  /** A `blob:` URL showing a saved image; revoke it once it's loaded. */
+  url: async (path: string) => URL.createObjectURL(new Blob([await invoke<ArrayBuffer>("read_ticket_image", { path })])),
+};
+
+/** Whether `path` is where `ticketImages.save` puts images. */
+export function isSavedImage(path: string): boolean {
+  return /^\/\S*\/\.workdesk\/attachments\/\S+$/.test(path);
+}
+
+/** The saved images a description links to, in order, each once. */
+export function savedImages(body: string): string[] {
+  const paths = [...body.matchAll(/!\[[^\]]*\]\(([^)\s]+)\)/g)].map((m) => m[1]).filter(isSavedImage);
+  return [...new Set(paths)];
+}
+
 // ---- Workdesk's own tickets, kept on this Mac ----
 
 const NATIVE_KEY = "workdesk.tickets";

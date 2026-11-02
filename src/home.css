@@ -1202,6 +1202,27 @@
 .home-modal-none {
   color: var(--faint);
 }
+.home-modal-image {
+  display: block;
+  margin: 6px 0;
+  padding: 0;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.home-modal-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+}
+.home-modal-image-gone {
+  display: block;
+  padding: 6px 10px;
+  color: var(--faint);
+}
 .home-modal-foot {
   display: flex;
   flex-wrap: wrap;

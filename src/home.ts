@@ -6,7 +6,7 @@ import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
-import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi } from "./tickets";
+import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, isSavedImage } from "./tickets";
 import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
@@ -871,7 +871,7 @@ export class HomePage extends Page {
 
     const desc = el("div", "home-modal-desc");
     const body = t.body?.trim();
-    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url)));
+    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url), (src, alt) => (isSavedImage(src) ? this.savedImage(src, alt) : null)));
     else desc.append(el("p", "home-modal-none", "No description."));
 
     const foot = el("div", "home-modal-foot");
@@ -940,6 +940,25 @@ export class HomePage extends Page {
 
   private closeTicket: ((refocus?: boolean) => void) | null = null;
 
+  /** An image pasted into one of Workdesk's own tickets, read from disk; clicking shows it in Finder. */
+  private savedImage(path: string, alt: string): HTMLElement {
+    const name = path.split("/").pop() ?? path;
+    const b = el("button", "home-modal-image");
+    b.title = `${path}\nClick to show it in Finder`;
+    const img = el("img", "");
+    img.alt = alt || name;
+    b.append(img);
+    b.addEventListener("click", () => this.source.reveal(path));
+    ticketImages.url(path).then(
+      (url) => {
+        img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+        img.src = url;
+      },
+      () => b.replaceChildren(el("span", "home-modal-image-gone", `Image not found: ${name}`)),
+    );
+    return b;
+  }
+
   // ---- writing a ticket ----
 
   /** The repos and lists each service offered, read once per visit. */
@@ -997,7 +1016,7 @@ export class HomePage extends Page {
     title.spellcheck = true;
     title.setAttribute("aria-label", "Title");
     const body = el("textarea", "home-compose-body");
-    body.placeholder = "Describe it: what's wrong or wanted, and how you'll know it's done. Markdown works.\nThis is the brief Claude starts from.";
+    const describe = "Describe it: what's wrong or wanted, and how you'll know it's done. Markdown works.";
     body.setAttribute("aria-label", "Description");
 
     const error = el("div", "home-compose-error");
@@ -1033,6 +1052,7 @@ export class HomePage extends Page {
       provider = p;
       showError("");
       for (const b of destButtons) b.setAttribute("aria-checked", String(b.dataset.provider === p));
+      body.placeholder = `${describe}\n${p === "workdesk" ? "Paste screenshots too: they're saved on this Mac and Claude reads them." : "This is the brief Claude starts from."}`;
       label();
       const remembered = editing ? { id: editing.project, name: editing.project } : memory.targets[p];
       const token = ++loadToken;
@@ -1097,6 +1117,44 @@ export class HomePage extends Page {
       body.value = editing.body ?? "";
     }
 
+    // Pasted or dropped images are saved to disk and linked by path, for Workdesk's own tickets.
+    let saving = 0;
+    const takeImages = (files: File[]) => {
+      if (provider !== "workdesk") {
+        showError(`Images stay on this Mac, so only Workdesk tickets take them. Add them in ${providerName(provider)} instead.`);
+        return;
+      }
+      showError("");
+      saving++;
+      Promise.all(files.map((f) => ticketImages.save(f)))
+        .then((paths) => {
+          const links = paths.map((p) => `![${p.split("/").pop()}](${p})`).join("\n");
+          const before = body.value.slice(0, body.selectionStart);
+          const after = body.value.slice(body.selectionEnd);
+          // Each image on a line of its own.
+          const text = `${before && !before.endsWith("\n") ? "\n" : ""}${links}${after.startsWith("\n") ? "" : "\n"}`;
+          body.setRangeText(text, body.selectionStart, body.selectionEnd, "end");
+          body.focus();
+        })
+        .catch((e) => showError(`Couldn't save the image: ${e}`))
+        .finally(() => saving--);
+    };
+    const imagesIn = (data: DataTransfer | null) => [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+    body.addEventListener("paste", (e) => {
+      const images = imagesIn(e.clipboardData);
+      if (!images.length) return;
+      e.preventDefault();
+      takeImages(images);
+    });
+    body.addEventListener("drop", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      // Handled here, so the window's file drop doesn't paste it into a terminal behind the modal.
+      e.preventDefault();
+      const images = imagesIn(e.dataTransfer);
+      if (images.length) takeImages(images);
+      else showError("Only images can be added to a ticket.");
+    });
+
     const close = (refocus = true) => {
       if (!backdrop.isConnected) return;
       backdrop.remove();
@@ -1122,6 +1180,7 @@ export class HomePage extends Page {
     modal.addEventListener("submit", (e) => {
       e.preventDefault();
       if (busy) return;
+      if (saving) return showError("Still saving the image. Try again in a moment.");
       const t = target();
       if (!title.value.trim()) {
         showError("Give the ticket a title.");
