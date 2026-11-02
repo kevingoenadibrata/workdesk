@@ -67,7 +67,10 @@ export interface PullRequest {
 /** Where a service's token comes from: one pasted in Settings, the `gh` CLI's login, or none. */
 export type TokenSource = "keychain" | "gh" | null;
 
-export const PROVIDERS: { id: Provider; name: string; noun: string; tokenUrl: string; tokenHelp: string }[] = [
+/** The services Workdesk connects to; Workdesk's own tickets aren't one. */
+export type Service = Exclude<Provider, "workdesk">;
+
+export const PROVIDERS: { id: Service; name: string; noun: string; tokenUrl: string; tokenHelp: string }[] = [
   {
     id: "github",
     name: "GitHub",
@@ -91,18 +94,52 @@ export const PROVIDERS: { id: Provider; name: string; noun: string; tokenUrl: st
   },
 ];
 
-export const providerName = (p: Provider) => PROVIDERS.find((x) => x.id === p)!.name;
+export const providerName = (p: Provider) => (p === "workdesk" ? "Workdesk" : PROVIDERS.find((x) => x.id === p)!.name);
+
+/** Where tickets can be written: Workdesk itself, or a service that takes them. */
+export const WRITABLE = ["workdesk", "github", "clickup"] as const satisfies readonly Provider[];
+export type Writable = (typeof WRITABLE)[number];
+
+/** Somewhere a new ticket can go: a GitHub repo ("owner/name"), or a ClickUp list. */
+export interface Target {
+  id: string;
+  name: string;
+}
+
+/** A ticket to write. `target` is the repo or list; for Workdesk's own, the project's name. */
+export interface Draft {
+  provider: Writable;
+  target: Target;
+  title: string;
+  body: string;
+}
 
 // ---- the backend ----
 
 export const ticketsApi = {
-  accounts: () => invoke<{ provider: Provider; source: TokenSource }[]>("tickets_accounts"),
+  accounts: () => invoke<{ provider: Service; source: TokenSource }[]>("tickets_accounts"),
   whoami: (provider: Provider) => invoke<string>("tickets_whoami", { provider }),
   connect: (provider: Provider, token: string) => invoke<string>("tickets_connect", { provider, token }),
   disconnect: (provider: Provider) => invoke<void>("tickets_disconnect", { provider }),
   list: (provider: Provider) => invoke<Ticket[]>("tickets_list", { provider }),
   pulls: () => invoke<PullRequest[]>("tickets_pulls"),
+  targets: (provider: Service) => invoke<Target[]>("tickets_targets", { provider }),
+  create: (provider: Service, target: string, title: string, body: string) => invoke<Ticket>("tickets_create", { provider, target, title, body }),
 };
+
+// ---- Workdesk's own tickets, kept on this Mac ----
+
+const NATIVE_KEY = "workdesk.tickets";
+const NATIVE_SEQ_KEY = "workdesk.ticketSeq";
+
+function loadNative(): Ticket[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(NATIVE_KEY) ?? "[]");
+    return Array.isArray(saved) ? saved.filter((t) => t && t.provider === "workdesk" && typeof t.id === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export function updatedAt(t: { updated: string }): number {
   return /^\d+$/.test(t.updated) ? Number(t.updated) : Date.parse(t.updated) || 0;
@@ -168,7 +205,7 @@ interface PullState {
 
 /** Every connected service's tickets, read on start, every few minutes, and on demand. */
 export class TicketStore {
-  readonly state = new Map<Provider, ProviderState>(
+  readonly state = new Map<Service, ProviderState>(
     PROVIDERS.map((p) => [p.id, { source: null, tickets: [], error: "", loading: false, at: 0 }]),
   );
   readonly pullState: PullState = { pulls: [], error: "", loading: false, at: 0 };
@@ -186,12 +223,63 @@ export class TicketStore {
     for (const fn of this.listeners) fn();
   }
 
-  get connected(): Provider[] {
+  /** Tickets written in Workdesk, newest first. */
+  native: Ticket[] = loadNative();
+
+  get connected(): Service[] {
     return PROVIDERS.map((p) => p.id).filter((id) => this.state.get(id)!.source);
   }
 
   get tickets(): Ticket[] {
-    return this.connected.flatMap((p) => this.state.get(p)!.tickets);
+    return [...this.native, ...this.connected.flatMap((p) => this.state.get(p)!.tickets)];
+  }
+
+  private saveNative() {
+    try {
+      localStorage.setItem(NATIVE_KEY, JSON.stringify(this.native));
+    } catch {}
+  }
+
+  /** Writes `d` to Workdesk or its service; the ticket lands in the backlog straight away. */
+  async create(d: Draft): Promise<Ticket> {
+    const title = d.title.trim();
+    if (!title) throw "Give the ticket a title";
+    let ticket: Ticket;
+    if (d.provider === "workdesk") {
+      const seq = (Number(localStorage.getItem(NATIVE_SEQ_KEY)) || 0) + 1;
+      try {
+        localStorage.setItem(NATIVE_SEQ_KEY, String(seq));
+      } catch {}
+      ticket = { provider: "workdesk", id: `WD-${seq}`, title, url: "", project: d.target.name.trim(), status: "Todo", color: null, updated: new Date().toISOString(), branch: null, body: d.body.trim() };
+      this.native.unshift(ticket);
+      this.saveNative();
+    } else {
+      ticket = await ticketsApi.create(d.provider, d.target.id, title, d.body.trim());
+      // ClickUp's answer can leave out the list's name.
+      if (!ticket.project) ticket.project = d.target.name.split(" / ").pop() ?? "";
+      const s = this.state.get(d.provider)!;
+      s.tickets = [ticket, ...s.tickets.filter((t) => t.id !== ticket.id)];
+    }
+    this.emit();
+    return ticket;
+  }
+
+  /** Forgets one of Workdesk's own tickets; returns it, for Undo. */
+  removeNative(id: string): Ticket | undefined {
+    const t = this.native.find((x) => x.id === id);
+    if (!t) return;
+    this.native = this.native.filter((x) => x !== t);
+    this.saveNative();
+    this.emit();
+    return t;
+  }
+
+  /** Puts back a ticket `removeNative` took out. */
+  restoreNative(t: Ticket) {
+    if (this.native.some((x) => x.id === t.id)) return;
+    this.native = [t, ...this.native].sort((a, b) => updatedAt(b) - updatedAt(a));
+    this.saveNative();
+    this.emit();
   }
 
   get loading(): boolean {
@@ -274,7 +362,7 @@ export class TicketStore {
     this.emit();
   }
 
-  private async load(p: Provider) {
+  private async load(p: Service) {
     const s = this.state.get(p)!;
     if (s.loading) return;
     s.loading = true;

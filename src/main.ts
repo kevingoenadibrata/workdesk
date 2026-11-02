@@ -275,6 +275,8 @@ async function endSession(session: Session): Promise<string> {
   const merged = session.pull?.state === "MERGED";
   const msg = await sessionsApi.remove(session.path, session.root, session.branch, merged, session.promptFile);
   sessionStore.delete(session.id);
+  // A Workdesk ticket whose PR merged is done; otherwise it goes back to the backlog.
+  if (merged && session.ticket?.provider === "workdesk") ticketStore.removeNative(session.ticket.id);
   return msg;
 }
 

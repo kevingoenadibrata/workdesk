@@ -75,7 +75,7 @@ function build(session: Session, state: SessionState, actions: SessionBarActions
   if (t) {
     ticket = chip("ticket", `${t.id} · ${t.title}\n${providerName(t.provider)}`, (b) =>
       menuBelow(b, [
-        { label: `Open in ${providerName(t.provider)}`, icon: ExternalLink, action: () => actions.openUrl(t.url) },
+        ...(t.url ? [{ label: `Open in ${providerName(t.provider)}`, icon: ExternalLink, action: () => actions.openUrl(t.url) }] : []),
         { label: "Send Brief to Claude", icon: Send, title: "Type the ticket into Claude's prompt", action: () => actions.sendBrief(session) },
         { separator: true },
         { label: "Change Ticket…", icon: Ticket, action: () => actions.pickTicket(session, b) },

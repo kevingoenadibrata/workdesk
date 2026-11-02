@@ -209,7 +209,7 @@ function load(name: string) {
 const source: HomeSource = {
   tickets: () => {
     const connected = state.connected !== false;
-    return { connected, loading: false, refreshing, tickets: connected ? tickets : [], errors: state.error ? [{ provider: "linear", error: state.error }] : [] };
+    return { connected, loading: false, refreshing, tickets: connected ? tickets : tickets.filter((t) => t.provider === "workdesk"), errors: state.error ? [{ provider: "linear", error: state.error }] : [] };
   },
   sessions: () => runs.all,
   sessionState: (s) => runs.state(s),
@@ -246,6 +246,27 @@ const source: HomeSource = {
     return `Made a worktree for ${branch} in app (from origin/main; copied .env)`;
   },
   startBranch: async (_t, branch) => `Created ${branch} in app`,
+  writable: () => (state.connected !== false ? ["workdesk", "github", "clickup"] : ["workdesk"]),
+  targets: async (p) => {
+    await new Promise((r) => setTimeout(r, 500));
+    return p === "github"
+      ? [{ id: "kevingoenadibrata/workdesk", name: "kevingoenadibrata/workdesk" }, { id: "acme/app", name: "acme/app" }]
+      : [{ id: "901", name: "Ops / Backlog" }, { id: "902", name: "Ops / Infra / On-call" }];
+  },
+  createTicket: async (d) => {
+    await new Promise((r) => setTimeout(r, 400));
+    const n = tickets.length + 1;
+    const id = d.provider === "workdesk" ? `WD-${n}` : d.provider === "github" ? `#${200 + n}` : `OPS-${n}`;
+    const t = { ...T(d.provider, id, d.title.trim(), d.target.name.split(" / ").pop() ?? "", d.provider === "github" ? "Open" : "Todo", null, 0), body: d.body };
+    if (d.provider === "workdesk") t.url = "";
+    tickets = [t, ...tickets];
+    emit();
+    return t;
+  },
+  deleteTicket: (t) => {
+    tickets = tickets.filter((x) => ticketKey(x) !== ticketKey(t));
+    emit();
+  },
   openSession: (s) => console.log("open session", s.id),
   endSession: async (run) => {
     await new Promise((r) => setTimeout(r, 300));

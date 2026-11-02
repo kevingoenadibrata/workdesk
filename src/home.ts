@@ -1,12 +1,12 @@
 import "./home.css";
 import { Page, el } from "./page";
-import { ArrowRight, ArrowUpRight, Bot, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Search, Settings, Trash2, X, icon } from "./icons";
+import { ArrowRight, ArrowUpRight, Bot, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Plus, Search, Settings, Trash2, X, icon } from "./icons";
 import { botSvg, type BotFace } from "./bot";
 import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
-import { PROVIDERS, branchName, providerName, updatedAt, ago, type PullRequest, type Ticket, type TicketStore } from "./tickets";
+import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi } from "./tickets";
 import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
@@ -58,6 +58,32 @@ export interface HomeSource {
   dismissServer(key: string): void;
   /** Re-reads the tickets: only stale services' unless `force`. */
   refresh(force?: boolean): void;
+  /** Where a new ticket can be written: Workdesk, and each connected service that takes them. */
+  writable(): Writable[];
+  /** The repos or lists a new ticket on `provider` can go in. */
+  targets(provider: Exclude<Writable, "workdesk">): Promise<Target[]>;
+  /** Writes a ticket; it's in the backlog once this resolves. */
+  createTicket(draft: Draft): Promise<Ticket>;
+  /** Deletes one of Workdesk's own tickets, with Undo. */
+  deleteTicket(ticket: Ticket): void;
+}
+
+const COMPOSE_KEY = "workdesk.newTicket";
+
+/** What the last new ticket was written to, so the next starts there. */
+interface ComposeMemory {
+  provider: Writable;
+  /** The last repo, list or project picked, per destination. */
+  targets: Partial<Record<Writable, Target>>;
+}
+
+function loadCompose(): ComposeMemory {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMPOSE_KEY) ?? "{}");
+    return { provider: WRITABLE.includes(saved.provider) ? saved.provider : "workdesk", targets: saved.targets ?? {} };
+  } catch {
+    return { provider: "workdesk", targets: {} };
+  }
 }
 
 type Within = "any" | "1d" | "7d" | "30d";
@@ -369,7 +395,12 @@ export class HomePage extends Page {
     reload.setAttribute("aria-label", "Refresh the backlog");
     reload.append(icon(RotateCcw, 13));
     reload.addEventListener("click", () => this.source.refresh(true));
-    tools.append(search, filter, reload);
+    const write = el("button", "home-write");
+    write.title = "Write a ticket in Workdesk, GitHub or ClickUp";
+    write.setAttribute("aria-label", "New ticket");
+    write.append(icon(Plus, 14), "New");
+    write.addEventListener("click", () => this.openComposer());
+    tools.append(search, filter, reload, write);
     const chips = el("div", "home-chips");
     const errors = el("div", "home-errors");
     const backlogList = el("div", "home-list");
@@ -719,8 +750,8 @@ export class HomePage extends Page {
     if (!e) return;
     const { connected, errors, refreshing } = this.source.tickets();
     if (e.reload.classList.contains("spinning") !== refreshing) e.reload.classList.toggle("spinning", refreshing);
-    setText(e.backlogCount, connected ? String(this.backlogTickets().length) : "");
-    if (e.tools.hidden === connected) e.tools.hidden = !connected;
+    const count = this.backlogTickets().length;
+    setText(e.backlogCount, connected || count ? String(count) : "");
 
     // The filter button and a chip per active filter.
     const n = this.activeCount();
@@ -748,10 +779,10 @@ export class HomePage extends Page {
     const all = this.backlogTickets();
     const n = this.activeCount();
     this.renderPager(0);
-    if (!connected) return sync(e.backlog, [this.empty("No services connected", "Connect one above to fill the backlog.")]);
+    if (!connected && !all.length) return sync(e.backlog, [this.empty("No tickets yet", "Write one with New ticket, or connect a service above.")]);
     if (!all.length) {
       return sync(e.backlog, [
-        loading ? this.empty("Reading your tickets…", "") : this.empty("Backlog's clear", "New tickets assigned to you on GitHub, Linear and ClickUp show up here."),
+        loading ? this.empty("Reading your tickets…", "") : this.empty("Backlog's clear", "Write a ticket with New ticket; ones assigned to you on GitHub, Linear and ClickUp show up here too."),
       ]);
     }
     const matching = this.matching();
@@ -882,16 +913,24 @@ export class HomePage extends Page {
     hand.append(icon(Bot, 14), "Hand to Claude");
     hand.title = `Make a worktree for ${branch} and start Claude on ${t.id}`;
     const left = el("div", "home-modal-tools");
+    const native = t.provider === "workdesk";
+    if (!native) left.append(secondary(ArrowUpRight, `Open in ${providerName(t.provider)}`, () => this.source.openUrl(t.url)));
     left.append(
-      secondary(ArrowUpRight, `Open in ${providerName(t.provider)}`, () => this.source.openUrl(t.url)),
       secondary(GitBranchPlus, "Start branch", () => {
         close();
         const start = () => void this.report(this.source.startBranch(t, branch), start);
         start();
       }),
       secondary(Hash, "Copy ID", () => void copy(t.id).then(() => showToast(`Copied ${t.id}`))),
-      secondary(Copy, "Copy link", () => void copy(t.url).then(() => showToast(`Copied link to ${t.id}`))),
     );
+    if (!native) left.append(secondary(Copy, "Copy link", () => void copy(t.url).then(() => showToast(`Copied link to ${t.id}`))));
+    else
+      left.append(
+        secondary(Trash2, "Delete", () => {
+          close();
+          this.source.deleteTicket(t);
+        }),
+      );
     foot.append(left, hand);
 
     modal.append(head, title, meta, desc, foot);
@@ -925,6 +964,201 @@ export class HomePage extends Page {
   }
 
   private closeTicket: ((refocus?: boolean) => void) | null = null;
+
+  // ---- writing a ticket ----
+
+  /** The repos and lists each service offered, read once per visit. */
+  private targetCache = new Map<Writable, Promise<Target[]>>();
+
+  /** A modal to write a ticket: where it goes (Workdesk, GitHub or ClickUp), a title and a description. */
+  private openComposer() {
+    this.closeTicket?.();
+    const returnFocus = document.activeElement as HTMLElement | null;
+    const memory = loadCompose();
+    const writable = this.source.writable();
+    let provider: Writable = writable.includes(memory.provider) ? memory.provider : "workdesk";
+
+    const backdrop = el("div", "home-modal-backdrop");
+    const modal = el("form", "home-modal home-compose");
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    modal.setAttribute("aria-labelledby", "home-compose-title");
+
+    const head = el("div", "home-modal-head");
+    const heading = el("h2", "home-compose-heading", "New ticket");
+    heading.id = "home-compose-title";
+    const x = el("button", "home-modal-x");
+    x.type = "button";
+    x.title = "Close";
+    x.setAttribute("aria-label", "Close");
+    x.append(icon(X, 15));
+    head.append(heading, x);
+
+    // Where it goes: one button per destination, then the repo, list or project in it.
+    const where = el("div", "home-compose-where");
+    const dests = el("div", "home-compose-dests");
+    dests.setAttribute("role", "radiogroup");
+    dests.setAttribute("aria-label", "Write it in");
+    const destButtons = writable.map((p) => {
+      const b = el("button", "home-compose-dest");
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.dataset.provider = p;
+      b.append(logoSpan(p, 13), providerName(p));
+      b.addEventListener("click", () => pick(p));
+      return b;
+    });
+    dests.append(...destButtons);
+    const targetBox = el("div", "home-compose-target");
+    where.append(dests, targetBox);
+
+    const title = el("input", "home-compose-title");
+    title.placeholder = "Title";
+    title.spellcheck = true;
+    title.setAttribute("aria-label", "Title");
+    const body = el("textarea", "home-compose-body");
+    body.placeholder = "Describe it: what's wrong or wanted, and how you'll know it's done. Markdown works.\nThis is the brief Claude starts from.";
+    body.setAttribute("aria-label", "Description");
+
+    const error = el("div", "home-compose-error");
+    error.hidden = true;
+    const foot = el("div", "home-modal-foot");
+    const hint = el("span", "home-compose-hint", "⌘↵ to create");
+    const submit = el("button", "home-hand home-modal-hand");
+    submit.type = "submit";
+    foot.append(hint, submit);
+    modal.append(head, where, title, body, error, foot);
+    backdrop.append(modal);
+    document.body.append(backdrop);
+
+    /** The repo, list or project picked for the destination showing. */
+    let target: () => Target | null = () => null;
+    let loadToken = 0;
+
+    const showError = (msg: string) => {
+      error.textContent = msg;
+      error.hidden = !msg;
+    };
+
+    const pick = (p: Writable) => {
+      provider = p;
+      showError("");
+      for (const b of destButtons) b.setAttribute("aria-checked", String(b.dataset.provider === p));
+      submit.replaceChildren(icon(Plus, 14), p === "workdesk" ? "Create ticket" : `Create in ${providerName(p)}`);
+      const remembered = memory.targets[p];
+      const token = ++loadToken;
+      if (p === "workdesk") {
+        // Workdesk's own tickets just name a project; known ones are suggested.
+        const input = el("input", "home-compose-select");
+        input.placeholder = "Project (optional)";
+        input.setAttribute("aria-label", "Project");
+        input.value = remembered?.name ?? "";
+        const list = el("datalist", "");
+        list.id = "home-compose-projects";
+        const known = [...new Set(this.source.tickets().tickets.map((t) => t.project).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+        list.append(...known.map((name) => Object.assign(document.createElement("option"), { value: name })));
+        input.setAttribute("list", list.id);
+        targetBox.replaceChildren(input, list);
+        target = () => ({ id: input.value.trim(), name: input.value.trim() });
+        return;
+      }
+      const noun = p === "github" ? "repo" : "list";
+      const select = el("select", "home-compose-select");
+      select.setAttribute("aria-label", p === "github" ? "Repo" : "List");
+      select.disabled = true;
+      select.append(new Option(`Reading your ${noun}s…`, ""));
+      targetBox.replaceChildren(select);
+      target = () => null;
+      let cached = this.targetCache.get(p);
+      if (!cached) {
+        cached = this.source.targets(p);
+        this.targetCache.set(p, cached);
+        // A failed read is tried again next time.
+        cached.catch(() => this.targetCache.delete(p));
+      }
+      cached.then(
+        (targets) => {
+          if (token !== loadToken) return;
+          if (!targets.length) {
+            select.replaceChildren(new Option(`No ${noun}s found`, ""));
+            return;
+          }
+          select.replaceChildren(new Option(`Pick a ${noun}…`, ""), ...targets.map((t) => new Option(t.name, t.id)));
+          if (remembered && targets.some((t) => t.id === remembered.id)) select.value = remembered.id;
+          select.disabled = false;
+          target = () => targets.find((t) => t.id === select.value) ?? null;
+        },
+        (e) => {
+          if (token !== loadToken) return;
+          select.replaceChildren(new Option(`Couldn't read your ${noun}s`, ""));
+          showError(String(e));
+        },
+      );
+    };
+    pick(provider);
+
+    const close = (refocus = true) => {
+      if (!backdrop.isConnected) return;
+      backdrop.remove();
+      this.closeTicket = null;
+      if (refocus) returnFocus?.focus();
+    };
+    this.closeTicket = close;
+    x.addEventListener("click", () => close());
+    backdrop.addEventListener("mousedown", (e) => {
+      if (e.target === backdrop) close();
+    });
+    backdrop.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        modal.requestSubmit();
+      }
+    });
+    let busy = false;
+    modal.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (busy) return;
+      const t = target();
+      if (!title.value.trim()) {
+        showError("Give the ticket a title.");
+        return title.focus();
+      }
+      if (!t) {
+        showError(`Pick a ${provider === "github" ? "repo" : "list"} for it.`);
+        return targetBox.querySelector<HTMLElement>("select, input")?.focus();
+      }
+      busy = true;
+      submit.disabled = true;
+      modal.classList.add("busy");
+      showError("");
+      const p = provider;
+      void this.source.createTicket({ provider: p, target: t, title: title.value, body: body.value }).then(
+        (ticket) => {
+          try {
+            localStorage.setItem(COMPOSE_KEY, JSON.stringify({ provider: p, targets: { ...memory.targets, [p]: t } }));
+          } catch {}
+          close();
+          this.page = 0;
+          this.render();
+          this.showFlash(p === "workdesk" ? `Wrote ${ticket.id}` : `Created ${ticket.id} in ${ticket.project || providerName(p)}`);
+          const card = this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(ticket)}`)}"]`);
+          card?.classList.add("arrived");
+          card?.scrollIntoView({ block: "nearest" });
+        },
+        (err) => {
+          busy = false;
+          submit.disabled = false;
+          modal.classList.remove("busy");
+          showError(String(err));
+        },
+      );
+    });
+    title.focus();
+  }
 
   /** Hands `t` to Claude; once its session shows up, the card flies over to the agent lane. */
   private handOver(t: Ticket, card: HTMLElement) {
@@ -1050,8 +1284,8 @@ export class HomePage extends Page {
       const sources = section("Source");
       const sc = counts("sources", (t) => t.provider);
       const connected = new Set(this.source.tickets().tickets.map((t) => t.provider));
-      for (const p of PROVIDERS.filter((p) => connected.has(p.id) || f.sources.includes(p.id)))
-        sources.append(option(f.sources.includes(p.id), false, [logoSpan(p.id, 13), el("span", "home-option-label", p.name)], sc.get(p.id) ?? 0, toggle("sources", p.id)));
+      for (const p of (["workdesk", ...PROVIDERS.map((p) => p.id)] as Provider[]).filter((p) => connected.has(p) || f.sources.includes(p)))
+        sources.append(option(f.sources.includes(p), false, [logoSpan(p, 13), el("span", "home-option-label", providerName(p))], sc.get(p) ?? 0, toggle("sources", p)));
 
       const statuses = section("Status");
       const stc = counts("statuses", statusKey);
@@ -1373,6 +1607,13 @@ export function liveHomeSource(
       servers.onChange(fn);
     },
     refresh: (force = false) => void tickets.refresh(force),
+    writable: () => WRITABLE.filter((p) => p === "workdesk" || tickets.connected.includes(p)),
+    targets: (p) => ticketsApi.targets(p),
+    createTicket: (d) => tickets.create(d),
+    deleteTicket: (t) => {
+      const gone = tickets.removeNative(t.id);
+      if (gone) showToast(`Deleted ${t.id}`, 5000, { label: "Undo", run: () => tickets.restoreNative(gone) });
+    },
     ...actions,
   };
 }

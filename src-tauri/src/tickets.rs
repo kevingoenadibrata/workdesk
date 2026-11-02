@@ -196,26 +196,26 @@ fn github(token: &str, path: &str) -> reqwest::RequestBuilder {
 async fn github_tickets(token: &str) -> Result<Vec<Ticket>, String> {
     let body = send("GitHub", github(token, "/search/issues?q=is:open+is:issue+assignee:@me+archived:false&sort=updated&order=desc&per_page=100")).await?;
     let items = body["items"].as_array().cloned().unwrap_or_default();
-    Ok(items
-        .iter()
-        .map(|i| {
-            // ".../repos/owner/name" → "owner/name"
-            let repo = str_at(i, "/repository_url");
-            let repo = repo.splitn(6, '/').nth(5).unwrap_or_default().to_string();
-            Ticket {
-                provider: Provider::Github,
-                id: format!("#{}", i["number"].as_u64().unwrap_or_default()),
-                title: str_at(i, "/title"),
-                url: str_at(i, "/html_url"),
-                project: repo,
-                status: "Open".into(),
-                color: None,
-                updated: str_at(i, "/updated_at"),
-                branch: None,
-                body: cut(str_at(i, "/body")),
-            }
-        })
-        .collect())
+    Ok(items.iter().map(github_issue).collect())
+}
+
+/// A GitHub issue, as the search and create APIs return it.
+fn github_issue(i: &Value) -> Ticket {
+    // ".../repos/owner/name" → "owner/name"
+    let repo = str_at(i, "/repository_url");
+    let repo = repo.splitn(6, '/').nth(5).unwrap_or_default().to_string();
+    Ticket {
+        provider: Provider::Github,
+        id: format!("#{}", i["number"].as_u64().unwrap_or_default()),
+        title: str_at(i, "/title"),
+        url: str_at(i, "/html_url"),
+        project: repo,
+        status: "Open".into(),
+        color: None,
+        updated: str_at(i, "/updated_at"),
+        branch: None,
+        body: cut(str_at(i, "/body")),
+    }
 }
 
 async fn github_pulls(token: &str) -> Result<Vec<PullRequest>, String> {
@@ -306,19 +306,7 @@ async fn clickup_tickets(token: &str) -> Result<Vec<Ticket>, String> {
             )
             .await?;
             for t in body["tasks"].as_array().cloned().unwrap_or_default() {
-                let custom = str_at(&t, "/custom_id");
-                out.push(Ticket {
-                    provider: Provider::Clickup,
-                    id: if custom.is_empty() { str_at(&t, "/id") } else { custom },
-                    title: str_at(&t, "/name"),
-                    url: str_at(&t, "/url"),
-                    project: str_at(&t, "/list/name"),
-                    status: str_at(&t, "/status/status"),
-                    color: t.pointer("/status/color").and_then(Value::as_str).map(str::to_string),
-                    updated: str_at(&t, "/date_updated"),
-                    branch: None,
-                    body: cut(str_at(&t, "/text_content")),
-                });
+                out.push(clickup_task(&t));
             }
             if body["last_page"].as_bool() != Some(false) {
                 break;
@@ -326,6 +314,89 @@ async fn clickup_tickets(token: &str) -> Result<Vec<Ticket>, String> {
         }
     }
     Ok(out)
+}
+
+/// A ClickUp task, as the list and create APIs return it.
+fn clickup_task(t: &Value) -> Ticket {
+    let custom = str_at(t, "/custom_id");
+    Ticket {
+        provider: Provider::Clickup,
+        id: if custom.is_empty() { str_at(t, "/id") } else { custom },
+        title: str_at(t, "/name"),
+        url: str_at(t, "/url"),
+        project: str_at(t, "/list/name"),
+        status: str_at(t, "/status/status"),
+        color: t.pointer("/status/color").and_then(Value::as_str).map(str::to_string),
+        updated: str_at(t, "/date_updated"),
+        branch: None,
+        body: cut(str_at(t, "/text_content")),
+    }
+}
+
+// ---- writing tickets ----
+
+/// Somewhere a new ticket can go: a GitHub repo, or a ClickUp list.
+#[derive(Serialize)]
+pub struct Target {
+    /// "owner/name", or the ClickUp list's id.
+    id: String,
+    /// "owner/name", or "Space / Folder / List".
+    name: String,
+}
+
+/// The repos the user can push to, most recently pushed first.
+async fn github_targets(token: &str) -> Result<Vec<Target>, String> {
+    let body = send("GitHub", github(token, "/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member")).await?;
+    Ok(body
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|r| r["has_issues"].as_bool() != Some(false) && r["archived"].as_bool() != Some(true))
+        .map(|r| Target { id: str_at(r, "/full_name"), name: str_at(r, "/full_name") })
+        .collect())
+}
+
+/// Every list in every space the user is in, folders included.
+async fn clickup_targets(token: &str) -> Result<Vec<Target>, String> {
+    let teams = clickup(token, "/team").await?;
+    let mut out = Vec::new();
+    for team in teams["teams"].as_array().cloned().unwrap_or_default() {
+        let spaces = clickup(token, &format!("/team/{}/space?archived=false", str_at(&team, "/id"))).await?;
+        for space in spaces["spaces"].as_array().cloned().unwrap_or_default() {
+            let (id, sname) = (str_at(&space, "/id"), str_at(&space, "/name"));
+            let lists = |v: &Value, prefix: String| -> Vec<Target> {
+                v["lists"].as_array().cloned().unwrap_or_default().iter().map(|l| Target { id: str_at(l, "/id"), name: format!("{prefix} / {}", str_at(l, "/name")) }).collect()
+            };
+            let folders = clickup(token, &format!("/space/{id}/folder?archived=false")).await?;
+            for f in folders["folders"].as_array().cloned().unwrap_or_default() {
+                out.extend(lists(&f, format!("{sname} / {}", str_at(&f, "/name"))));
+            }
+            out.extend(lists(&clickup(token, &format!("/space/{id}/list?archived=false")).await?, sname));
+        }
+    }
+    Ok(out)
+}
+
+async fn github_create(token: &str, repo: &str, title: &str, body: &str) -> Result<Ticket, String> {
+    let me = str_at(&send("GitHub", github(token, "/user")).await?, "/login");
+    let req = client()
+        .post(format!("https://api.github.com/repos/{repo}/issues"))
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        // Assigned to you, so it stays in your backlog.
+        .json(&json!({ "title": title, "body": body, "assignees": [me] }));
+    Ok(github_issue(&send("GitHub", req).await?))
+}
+
+async fn clickup_create(token: &str, list: &str, title: &str, body: &str) -> Result<Ticket, String> {
+    let me = clickup(token, "/user").await?.pointer("/user/id").and_then(Value::as_u64).ok_or("ClickUp sent something unexpected")?;
+    let req = client()
+        .post(format!("https://api.clickup.com/api/v2/list/{list}/task"))
+        .header("Authorization", token)
+        .json(&json!({ "name": title, "description": body, "markdown_content": body, "assignees": [me] }));
+    Ok(clickup_task(&send("ClickUp", req).await?))
 }
 
 // ---- commands ----
@@ -387,6 +458,31 @@ pub async fn tickets_list(provider: Provider) -> Result<Vec<Ticket>, String> {
     }
 }
 
+/// Where a new ticket on `provider` can go. Linear isn't offered yet.
+#[tauri::command]
+pub async fn tickets_targets(provider: Provider) -> Result<Vec<Target>, String> {
+    let (t, _) = tauri::async_runtime::spawn_blocking(move || token(provider)).await.ok().flatten().ok_or_else(|| missing(provider))?;
+    match provider {
+        Provider::Github => github_targets(&t).await,
+        Provider::Clickup => clickup_targets(&t).await,
+        Provider::Linear => Err("Writing Linear tickets isn't supported yet".into()),
+    }
+}
+
+/// Writes a ticket on `provider`, in `target` (a repo or list), assigned to the user.
+#[tauri::command]
+pub async fn tickets_create(provider: Provider, target: String, title: String, body: String) -> Result<Ticket, String> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err("Give the ticket a title".into());
+    }
+    let (t, _) = tauri::async_runtime::spawn_blocking(move || token(provider)).await.ok().flatten().ok_or_else(|| missing(provider))?;
+    match provider {
+        Provider::Github => github_create(&t, &target, &title, &body).await,
+        Provider::Clickup => clickup_create(&t, &target, &title, &body).await,
+        Provider::Linear => Err("Writing Linear tickets isn't supported yet".into()),
+    }
+}
 
 /// The open GitHub pull requests the user wrote or was asked to review, most recently updated first.
 #[tauri::command]
