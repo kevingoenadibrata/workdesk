@@ -45,6 +45,12 @@ export interface HomeSource {
   jumpTo(agent: Agent): void;
   openUrl(url: string): void;
   openSettings(): void;
+  /** Opens a tab in `dir` (home if undefined), running `command` if given. */
+  openTab(dir?: string, command?: string): void;
+  /** Shows `path` in Finder. */
+  reveal(path: string): void;
+  /** Why GitHub's pull requests couldn't be read, unless the tickets' error already says it; else "". */
+  pullError(): string;
   openServer(server: Server): void;
   jumpToServer(session: TermSession): void;
   dismissServer(key: string): void;
@@ -72,6 +78,12 @@ const FILTERS_KEY = "workdesk.homeFilters";
 /** Tickets per backlog page. */
 const PAGE_SIZE = 8;
 const statusKey = (t: Ticket) => t.status.toLowerCase().replace(/[\s_-]+/g, "");
+
+/** A button offered with an error: what would put it right. */
+interface Fix {
+  label: string;
+  run: () => void;
+}
 
 function loadFilters(): Filters {
   const fallback: Filters = { sources: [], projects: [], statuses: [], within: "any" };
@@ -461,21 +473,82 @@ export class HomePage extends Page {
     });
   }
 
-  private showFlash(message: string, error = false) {
+  /** Says what happened. An error stays, with its fixes, until one is clicked or it's dismissed. */
+  private showFlash(message: string, error = false, fixes: Fix[] = []) {
     const f = this.flash;
     if (!f || !message) return;
     clearTimeout(f.timer);
-    f.el.textContent = message;
+    const hide = () => (f.el.hidden = true);
+    f.el.replaceChildren(el("span", "home-flash-text", message));
+    if (error) {
+      const actions = el("span", "home-fixes");
+      for (const fix of fixes) {
+        const b = el("button", "home-fix", fix.label);
+        b.addEventListener("click", () => {
+          hide();
+          fix.run();
+        });
+        actions.append(b);
+      }
+      const x = el("button", "home-flash-x");
+      x.title = "Dismiss";
+      x.setAttribute("aria-label", "Dismiss");
+      x.append(icon(X, 13));
+      x.addEventListener("click", hide);
+      actions.append(x);
+      f.el.append(actions);
+    } else f.timer = window.setTimeout(hide, 3500);
     f.el.classList.toggle("error", error);
     f.el.hidden = false;
-    f.timer = window.setTimeout(() => (f.el.hidden = true), error ? 7000 : 3500);
   }
 
-  private report(p: Promise<string>) {
+  /** Flashes how `p` went; if it failed, with a way to fix it or `retry`. */
+  private report(p: Promise<string>, retry: () => void, run?: Run) {
     return p.then(
       (msg) => this.showFlash(msg),
-      (e) => this.showFlash(String(e), true),
+      (e) => this.showFlash(String(e), true, this.actionFixes(String(e), retry, run)),
     );
+  }
+
+  /** What to offer when making or removing a worktree failed. */
+  private actionFixes(error: string, retry: () => void, run?: Run): Fix[] {
+    const again = { label: "Try again", run: retry };
+    const checkedOut = error.match(/ is checked out in (.+?)\. Switch/);
+    if (checkedOut) return [{ label: "Open a tab there", run: () => this.source.openTab(checkedOut[1]) }, again];
+    const taken = error.match(/^(.+) already exists and isn't a worktree/);
+    if (taken) return [{ label: "Show in Finder", run: () => this.source.reveal(taken[1]) }, again];
+    if (/isn't in a git repo|bare repo/.test(error)) return [{ label: "Pick another folder", run: retry }];
+    if (run && /^Close the tab working in/.test(error)) return [{ label: "Go to tab", run: () => this.source.openRun(run) }, again];
+    if (run && /has changes that aren't committed/.test(error)) return [{ label: "Open a tab there", run: () => this.source.openTab(run.path) }, again];
+    return [again];
+  }
+
+  /** What to offer when reading a service failed. */
+  private serviceFixes(provider: Provider, error: string): Fix[] {
+    const settings = (label: string) => ({ label, run: () => this.source.openSettings() });
+    if (/^Not connected/.test(error)) {
+      const fixes = [settings("Connect")];
+      if (provider === "github") fixes.push({ label: "Sign in with gh", run: () => this.source.openTab(undefined, "gh auth login") });
+      return fixes;
+    }
+    if (/rejected the token/.test(error)) return [settings("Reconnect")];
+    const fixes = [{ label: "Retry", run: () => this.source.refresh(true) }];
+    if (/scope|permission|access/i.test(error)) fixes.push(settings("Open Settings"));
+    return fixes;
+  }
+
+  /** A service's error, with its fixes. */
+  private errorRow(provider: Provider, error: string): HTMLElement {
+    const row = el("div", "home-error");
+    row.append(logoSpan(provider, 13), el("span", "", error));
+    const actions = el("span", "home-fixes");
+    for (const fix of this.serviceFixes(provider, error)) {
+      const b = el("button", "home-fix", fix.label);
+      b.addEventListener("click", fix.run);
+      actions.append(b);
+    }
+    row.append(actions);
+    return row;
   }
 
   // ---- local servers: a tile in the header, and a drawer of them ----
@@ -665,18 +738,7 @@ export class HomePage extends Page {
 
   private renderErrors(errors: { provider: Provider; error: string }[], key: string) {
     this.shown.errors = key;
-    this.els!.errors.replaceChildren(
-      ...errors.map(({ provider, error }) => {
-        const err = el("div", "home-error");
-        err.append(logoSpan(provider, 13), el("span", "", error));
-        if (/token|connected/i.test(error)) {
-          const fix = el("button", "home-link", "Open Settings");
-          fix.addEventListener("click", () => this.source.openSettings());
-          err.append(fix);
-        }
-        return err;
-      }),
-    );
+    this.els!.errors.replaceChildren(...errors.map(({ provider, error }) => this.errorRow(provider, error)));
   }
 
   private renderBacklogList() {
@@ -823,7 +885,8 @@ export class HomePage extends Page {
       secondary(ArrowUpRight, `Open in ${providerName(t.provider)}`, () => this.source.openUrl(t.url)),
       secondary(GitBranchPlus, "Start branch", () => {
         close();
-        void this.report(this.source.startBranch(t, branch));
+        const start = () => void this.report(this.source.startBranch(t, branch), start);
+        start();
       }),
       secondary(Hash, "Copy ID", () => void copy(t.id).then(() => showToast(`Copied ${t.id}`))),
       secondary(Copy, "Copy link", () => void copy(t.url).then(() => showToast(`Copied link to ${t.id}`))),
@@ -877,7 +940,9 @@ export class HomePage extends Page {
       },
       (e) => {
         card.classList.remove("busy");
-        this.showFlash(String(e), true);
+        // Try again from the ticket's card as it is by then.
+        const retry = () => this.handOver(t, this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${runKey(t)}`)}"]`) ?? card);
+        this.showFlash(String(e), true, this.actionFixes(String(e), retry));
       },
     );
   }
@@ -1135,7 +1200,9 @@ export class HomePage extends Page {
       go.append("Answer in its tab", icon(ArrowRight, 12));
       meta.append(go);
     } else if (a?.status === "error") {
-      meta.append(el("span", "home-answer", "Hit an error"));
+      const go = el("span", "home-answer");
+      go.append("Hit an error · open its tab", icon(ArrowRight, 12));
+      meta.append(go);
     } else if (!a) {
       meta.append(el("span", "home-note", "Claude isn't running · click to resume"));
     } else if (a.status === "idle") {
@@ -1152,7 +1219,8 @@ export class HomePage extends Page {
       clean.append(icon(Trash2, 13));
       clean.addEventListener("click", (e) => {
         e.stopPropagation();
-        void this.report(this.source.cleanup(run));
+        const remove = () => void this.report(this.source.cleanup(run), remove, run);
+        remove();
       });
       actions.append(clean);
       card.append(actions);
@@ -1182,6 +1250,8 @@ export class HomePage extends Page {
       return this.card(`run:${r.run.key}`, sig, () => this.pullCard(r.run, r.agent, gh));
     };
     const parts: HTMLElement[] = [];
+    const error = this.source.pullError();
+    if (error) parts.push(this.card("pull-error", error, () => this.errorRow("github", error)));
     if (!runs.length) parts.push(this.empty("No pull requests yet", "When an agent opens one for a ticket, the ticket moves here."));
     if (open.length) parts.push(this.group("open", "Open", null, open.map(card)));
     if (done.length) parts.push(this.group("done", "Merged or closed", "var(--merged)", done.map(card)));
@@ -1220,8 +1290,11 @@ export class HomePage extends Page {
       clean.append(icon(Trash2, 12), "Clean up worktree");
       clean.title = p.state === "MERGED" ? `Remove the worktree and ${run.branch}` : "Remove the worktree (keeps the branch)";
       clean.addEventListener("click", () => {
-        card.classList.add("leaving");
-        void this.report(this.source.cleanup(run)).finally(() => card.classList.remove("leaving"));
+        const remove = () => {
+          card.classList.add("leaving");
+          void this.report(this.source.cleanup(run), remove, run).finally(() => card.classList.remove("leaving"));
+        };
+        remove();
       });
       meta.append(clean);
     }
@@ -1251,7 +1324,18 @@ export function liveHomeSource(
   servers: LocalServers,
   actions: Pick<
     HomeSource,
-    "handOver" | "startBranch" | "openRun" | "cleanup" | "jumpTo" | "openUrl" | "openSettings" | "openServer" | "jumpToServer" | "dismissServer"
+    | "handOver"
+    | "startBranch"
+    | "openRun"
+    | "cleanup"
+    | "jumpTo"
+    | "openUrl"
+    | "openSettings"
+    | "openTab"
+    | "reveal"
+    | "openServer"
+    | "jumpToServer"
+    | "dismissServer"
   >,
 ): HomeSource {
   return {
@@ -1266,6 +1350,10 @@ export function liveHomeSource(
     runState: (run) => runs.state(run),
     agentFor: (run) => runs.agentFor(run),
     agents: () => monitor.current,
+    pullError: () => {
+      const error = tickets.hasPulls ? tickets.pullState.error : "";
+      return error === tickets.state.get("github")!.error ? "" : error;
+    },
     pullFor: (branch) => tickets.pulls.find((p) => p.kind === "authored" && p.branch === branch),
     usage: liveUsage,
     servers: () => servers.current,

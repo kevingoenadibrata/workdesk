@@ -128,7 +128,7 @@ const LOOSE: { tab: string; harness: Agent["harness"]; status: AgentStatus; colo
   { tab: "api server", harness: "codex", status: "idle", color: "pink", prompt: "why is /v1/upload slow?", age: 25, log: ["• The upload handler reads the whole body into memory before streaming it to S3."] },
 ];
 
-const SCENARIOS: Record<string, { backlog: Ticket[]; working: Working[]; loose: typeof LOOSE; connected?: boolean; error?: string }> = {
+const SCENARIOS: Record<string, { backlog: Ticket[]; working: Working[]; loose: typeof LOOSE; connected?: boolean; error?: string; pullError?: string }> = {
   "Typical day": { backlog: BACKLOG, working: WORKING, loose: LOOSE },
   "Nothing running": { backlog: BACKLOG, working: WORKING.slice(6, 7), loose: [] },
   "Backlog cleared": { backlog: [], working: WORKING.slice(1, 3).concat(WORKING.slice(5)), loose: LOOSE.slice(0, 1) },
@@ -138,6 +138,13 @@ const SCENARIOS: Record<string, { backlog: Ticket[]; working: Working[]; loose: 
     working: WORKING.slice(0, 1),
     loose: [],
     error: "Linear rejected the token. Reconnect it in Settings → Integrations.",
+  },
+  Offline: {
+    backlog: BACKLOG.filter((t) => t.provider !== "linear"),
+    working: WORKING.slice(0, 2),
+    loose: [],
+    error: "Couldn't reach Linear",
+    pullError: "GitHub didn't answer in time",
   },
 };
 
@@ -249,6 +256,9 @@ const source: HomeSource = {
   jumpTo: (a) => console.log("jump to", a.tabTitle),
   openUrl: (url) => console.log("open", url),
   openSettings: () => console.log("settings"),
+  openTab: (dir, command) => console.log("open tab", dir, command),
+  reveal: (path) => console.log("reveal", path),
+  pullError: () => state.pullError ?? "",
   servers: () => SERVERS,
   openServer: (server) => console.log("open", server.port),
   jumpToServer: () => console.log("jump to server's pane"),

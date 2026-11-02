@@ -13,7 +13,7 @@ import { ticketStore, type Ticket } from "./tickets";
 import { buildPrompt, rememberRepo, repoFor, runKey, runStore, runsApi, shellQuote, type Run } from "./runs";
 import { panesInOrder } from "./monitor";
 import { HomePage, HomeRow, liveHomeSource } from "./home";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Page } from "./page";
 import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
@@ -64,6 +64,11 @@ const homePage = new HomePage(
     },
     openUrl: (url) => void openUrl(url),
     openSettings: () => settings.showSubPage("integrations"),
+    openTab: (dir, command) => {
+      Page.closeAll();
+      ws.newTab(undefined, dir, command ? [command] : undefined);
+    },
+    reveal: (path) => void revealItemInDir(path),
     openServer: (server) => void openUrl(serverUrl(server)),
     jumpToServer: (session) => {
       ws.reveal(session);
