@@ -20,6 +20,7 @@ declare global {
 // while agents run, and opens while hovered: the agents, then a bar with New
 // ticket and Teleport (which open in Workdesk, where you can type) and usage. Rust tells it
 // when it's hovered; it tells Rust how big it is so clicks outside it fall through.
+// It also pops open for a moment when an agent stops (goes idle) or starts waiting for you.
 
 loadTheme();
 const NOTCH = window.__NOTCH ?? { width: 200, height: 32 };
@@ -30,6 +31,10 @@ const OPEN_WIDTH = Math.max(NOTCH.width + 2 * EAR, 460);
 const CLOSE_DELAY = 250;
 /** How often to re-read usage; reading is just files, never a ping. */
 const USAGE_MS = 60_000;
+/** How long the panel stays open after popping up for an agent that stopped or needs you. */
+const PEEK_MS = 4_000;
+/** Statuses worth popping the panel open for, when an agent moves into one. */
+const POP_ON = new Set<NotchAgent["status"]>(["idle", "waiting"]);
 
 const root = document.documentElement;
 root.style.setProperty("--notch-h", `${NOTCH.height}px`);
@@ -73,14 +78,51 @@ for (const btn of [ticketBtn, teleportBtn]) {
 let agents: NotchAgent[] = [];
 let open = false;
 let closeTimer: number | undefined;
+/** Whether the pointer is over the shape, per Rust. */
+let hovering = false;
+/** Open because an agent changed, not because of the pointer; closes on its own. */
+let peeking = false;
+let peekTimer: number | undefined;
+/** Each agent's status at the last update, to spot the moment it changes. */
+const lastStatus = new Map<number, NotchAgent["status"]>();
+/** Agents that just popped the panel, highlighted while it's open. */
+let fresh = new Set<number>();
 /** Closed by a click: stay closed until the pointer leaves, so it doesn't pop back open under it. */
 let dismissed = false;
 
 function collapse() {
   clearTimeout(closeTimer);
+  endPeek();
   dismissed = true;
   open = false;
   layout();
+}
+
+function endPeek() {
+  clearTimeout(peekTimer);
+  peeking = false;
+  if (fresh.size) {
+    fresh = new Set();
+    for (const li of rows.querySelectorAll(".row.fresh")) li.classList.remove("fresh");
+  }
+}
+
+/** Opens the panel for a few seconds without the pointer, to show agents that just stopped or need you. */
+function peek(ids: number[]) {
+  for (const id of ids) fresh.add(id);
+  clearTimeout(peekTimer);
+  if (!open) void refreshUsage();
+  peeking = true;
+  open = true;
+  peekTimer = window.setTimeout(() => {
+    peeking = false;
+    // Leave it to the pointer if it's over the panel; it closes when the pointer leaves.
+    if (!hovering) {
+      endPeek();
+      open = false;
+      layout();
+    }
+  }, PEEK_MS);
 }
 
 /** The agent the collapsed notch speaks for: one that needs you, else a busy one, else the first. */
@@ -108,7 +150,7 @@ function render() {
     ...(agents.length
       ? agents.map((a) => {
           const li = document.createElement("li");
-          li.className = "row";
+          li.className = fresh.has(a.id) ? "row fresh" : "row";
           li.dataset.status = a.status;
           li.style.setProperty("--bot", a.color);
           li.innerHTML = `
@@ -147,7 +189,8 @@ function layout() {
   void invoke("notch_hit", { width, height });
 }
 
-void listen<boolean>("notch-hover", ({ payload: hovering }) => {
+void listen<boolean>("notch-hover", ({ payload }) => {
+  hovering = payload;
   clearTimeout(closeTimer);
   if (!hovering) dismissed = false;
   if (dismissed) return;
@@ -156,7 +199,10 @@ void listen<boolean>("notch-hover", ({ payload: hovering }) => {
     open = true;
     layout();
   } else {
+    // A pop-up still counting down closes on its own timer.
+    if (peeking) return;
     closeTimer = window.setTimeout(() => {
+      endPeek();
       open = false;
       layout();
     }, CLOSE_DELAY);
@@ -170,6 +216,16 @@ void listen<NotchAgent[]>("notch-agents", ({ payload }) => {
   if (sent === lastSent) return;
   lastSent = sent;
   agents = payload;
+  // Agents that just went idle or started waiting, not ones seen for the first time.
+  const changed = agents
+    .filter((a) => {
+      const before = lastStatus.get(a.id);
+      return before !== undefined && before !== a.status && POP_ON.has(a.status);
+    })
+    .map((a) => a.id);
+  lastStatus.clear();
+  for (const a of agents) lastStatus.set(a.id, a.status);
+  if (changed.length) peek(changed);
   render();
 });
 
