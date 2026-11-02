@@ -40,6 +40,7 @@ export {
   PanelLeftOpen,
   Package,
   Palette,
+  Pencil,
   Plug,
   Plus,
   Radar,
