@@ -1547,3 +1547,88 @@
 .home-modal-hand:disabled {
   opacity: 0.6;
 }
+
+/* ---- picking several backlog tickets ---- */
+
+/* The stub's checkbox: over the logo on hover, and on every card while any are picked. */
+.home-card.backlog .home-stub {
+  position: relative;
+}
+.home-check {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--card);
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+  color: transparent;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+.home-check:hover {
+  box-shadow: inset 0 0 0 1.5px var(--text);
+}
+.home-card.backlog:hover .home-check,
+.home-list.picking .home-check {
+  opacity: 1;
+}
+.home-card.backlog:hover .home-stub > svg,
+.home-list.picking .home-stub > svg {
+  opacity: 0;
+}
+.home-card.selected .home-check {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--on-accent);
+}
+.home-card.selected {
+  background: color-mix(in srgb, var(--accent) 9%, var(--card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+.home-card.selected:hover {
+  background: color-mix(in srgb, var(--accent) 13%, var(--card));
+}
+
+/* Over the backlog while tickets are picked. */
+.home-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--sunken));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, var(--border));
+  font-size: 12px;
+}
+.home-selection[hidden] {
+  display: none;
+}
+.home-selection-count {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.home-selection-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.home-selection-button {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.home-selection-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
