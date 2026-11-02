@@ -6804,28 +6804,28 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 }
 
 /* ---- toast (src/toast.ts) ---- */
+/* Floats in the window's bottom-right corner. */
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: 24px;
+  right: 20px;
+  bottom: 20px;
   z-index: 300;
   display: flex;
   align-items: center;
   gap: 8px;
-  max-width: min(480px, calc(100vw - 32px));
-  padding: 8px 14px 8px 11px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 12px 9px 11px;
   border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 9px;
   background: var(--raised);
   box-shadow: 0 10px 30px rgb(0 0 0 / calc(0.45 * var(--shadow-k)));
   color: var(--text);
   font-size: 12.5px;
-  pointer-events: none;
-  transform: translateX(-50%);
   animation: toast-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .toast.leaving {
   animation: toast-out 0.18s ease-in forwards;
+  pointer-events: none;
 }
 .toast-icon {
   flex: none;
@@ -6836,25 +6836,51 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.toast-action {
+/* An error can say more, so it wraps instead of cutting off. */
+.toast.error {
+  align-items: flex-start;
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.toast.error .toast-icon {
+  margin-top: 2px;
+  color: var(--danger);
+}
+.toast.error .toast-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.toast-actions {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  gap: 10px;
   margin-left: 6px;
+}
+.toast-action {
   color: var(--accent);
   font-weight: 500;
+  white-space: nowrap;
 }
 .toast-action:hover {
   text-decoration: underline;
 }
+.toast-x {
+  display: inline-flex;
+  color: var(--muted);
+}
+.toast-x:hover {
+  color: var(--text);
+}
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translateY(8px);
   }
 }
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translate(-50%, 4px);
+    transform: translateY(4px);
   }
 }
 @media (prefers-reduced-motion: reduce) {
