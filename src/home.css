@@ -714,7 +714,17 @@
   font-size: 12.5px;
 }
 .home-flash.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.home-flash-x {
+  display: inline-flex;
+  color: var(--muted);
+}
+.home-flash-x:hover {
+  color: var(--text);
 }
 .home-flash[hidden],
 .home-connect[hidden],
@@ -739,8 +749,14 @@
   color: color-mix(in srgb, var(--danger) 50%, var(--text));
   font-size: 12px;
 }
-.home-link {
+/* An error's fixes, at the end of its row. */
+.home-fixes {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin-left: auto;
+}
+.home-fix {
   color: var(--text);
   text-decoration: underline;
   white-space: nowrap;
