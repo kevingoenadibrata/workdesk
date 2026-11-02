@@ -57,6 +57,7 @@ export {
   Trash2,
   Type,
   Undo2,
+  Unlink,
   CornerLeftUp,
   CornerDownRight,
   Eye,

@@ -1,6 +1,7 @@
 import { providerLogo } from "./providerLogos";
-import { providerName } from "./tickets";
+import { providerName, type Ticket as TicketData } from "./tickets";
 import { SESSION_LABELS, type Session, type SessionState } from "./sessions";
+import { TicketSheet, type TicketView } from "./ticketsheet";
 import { closeMenu, showMenu, type MenuItem } from "./menu";
 import { Copy, ExternalLink, FolderGit2, FolderOpen, GitMerge, GitPullRequest, GitPullRequestClosed, Send, Ticket, TicketPlus, Trash2, X, icon } from "./icons";
 import type { TermSession } from "./terminal";
@@ -15,6 +16,48 @@ export interface SessionBarActions {
   detachTicket(session: Session): void;
   sendBrief(session: Session): void;
   openUrl(url: string): void;
+  /** The session's ticket in full (description, status) when the ticket list has it. */
+  ticketDetails(session: Session): TicketData;
+}
+
+/** Each pane's ticket panel, once opened. */
+const sheets = new WeakMap<TermSession, TicketSheet>();
+
+function sheetFor(pane: TermSession): TicketSheet {
+  let sheet = sheets.get(pane);
+  if (!sheet) {
+    sheet = new TicketSheet(pane.el);
+    sheet.onResize = () => pane.fit();
+    sheet.onClose = () => {
+      pane.headerInfo.querySelector(".pane-chip.ticket")?.classList.remove("open");
+      pane.fit();
+      pane.focus();
+    };
+    sheets.set(pane, sheet);
+  }
+  return sheet;
+}
+
+function ticketView(pane: TermSession, session: Session, actions: SessionBarActions): TicketView {
+  return {
+    ticket: actions.ticketDetails(session),
+    branch: session.branch,
+    sendBrief: () => actions.sendBrief(session),
+    change: (anchor) => actions.pickTicket(session, anchor),
+    detach: () => {
+      sheets.get(pane)?.close();
+      actions.detachTicket(session);
+    },
+    openUrl: actions.openUrl,
+  };
+}
+
+/** Opens `pane`'s ticket panel on its session's ticket, or closes it. */
+function toggleTicket(pane: TermSession, session: Session, actions: SessionBarActions, badge: HTMLElement) {
+  const sheet = sheetFor(pane);
+  if (sheet.isOpen) return sheet.close();
+  sheet.show(ticketView(pane, session, actions));
+  badge.classList.add("open");
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string) {
@@ -49,7 +92,7 @@ function menuBelow(anchor: HTMLElement, items: MenuItem[]) {
 }
 
 /** The bar's contents for `session`: its state, worktree, ticket and pull request. */
-function build(session: Session, state: SessionState, actions: SessionBarActions): Node[] {
+function build(pane: TermSession, session: Session, state: SessionState, actions: SessionBarActions): Node[] {
   const dot = el("span", "pane-session-state");
   dot.dataset.state = state;
   dot.title = SESSION_LABELS[state];
@@ -73,15 +116,21 @@ function build(session: Session, state: SessionState, actions: SessionBarActions
   const t = session.ticket;
   let ticket: HTMLButtonElement;
   if (t) {
-    ticket = chip("ticket", `${t.id} · ${t.title}\n${providerName(t.provider)}`, (b) =>
-      menuBelow(b, [
-        ...(t.url ? [{ label: `Open in ${providerName(t.provider)}`, icon: ExternalLink, action: () => actions.openUrl(t.url) }] : []),
+    ticket = chip("ticket", `${t.id} · ${t.title}\n${providerName(t.provider)} · Click for details, right-click for more`, (b) =>
+      toggleTicket(pane, session, actions, b),
+    );
+    ticket.classList.toggle("open", !!sheets.get(pane)?.isOpen);
+    ticket.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      menuBelow(ticket, [
+        ...(t.url && t.provider !== "workdesk" ? [{ label: `Open in ${providerName(t.provider)}`, icon: ExternalLink, action: () => actions.openUrl(t.url) }] : []),
         { label: "Send Brief to Claude", icon: Send, title: "Type the ticket into Claude's prompt", action: () => actions.sendBrief(session) },
         { separator: true },
-        { label: "Change Ticket…", icon: Ticket, action: () => actions.pickTicket(session, b) },
-        { label: "Detach Ticket", icon: X, action: () => actions.detachTicket(session) },
-      ]),
-    );
+        { label: "Change Ticket…", icon: Ticket, action: () => actions.pickTicket(session, ticket) },
+        { label: "Detach Ticket", icon: X, action: () => { sheets.get(pane)?.close(); actions.detachTicket(session); } },
+      ]);
+    });
     const logo = el("span", "pane-chip-logo");
     logo.innerHTML = providerLogo(t.provider, 11);
     ticket.append(logo, el("span", "pane-chip-main", t.id), el("span", "pane-chip-sub", t.title));
@@ -117,5 +166,11 @@ export function renderSessionBar(pane: TermSession, session: Session | null, sta
   const key = session ? JSON.stringify([state, session.repo, session.branch, session.path, session.ticket, session.pull]) : "";
   if (shown.get(pane) === key) return;
   shown.set(pane, key);
-  pane.setHeaderInfo(session ? build(session, state, actions) : null);
+  pane.setHeaderInfo(session ? build(pane, session, state, actions) : null);
+  // An open ticket panel follows the session: another ticket, or none.
+  const sheet = sheets.get(pane);
+  if (sheet?.isOpen) {
+    if (session?.ticket) sheet.show(ticketView(pane, session, actions));
+    else sheet.close();
+  }
 }

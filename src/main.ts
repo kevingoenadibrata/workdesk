@@ -295,6 +295,13 @@ function attachTicket(session: Session, ticket: Ticket) {
   showToast(`Attached ${ticket.id}`, 5000, { label: "Send brief to Claude", run: () => sendBrief(session) });
 }
 
+/** The session's ticket in full from the ticket list, else just what the session remembers of it. */
+function ticketDetails(session: Session): Ticket {
+  const t = session.ticket!;
+  const full = ticketStore.tickets.find((x) => ticketKey(x) === ticketKey(t));
+  return full ?? { ...t, project: "", status: "", color: null, updated: "", branch: null };
+}
+
 /** Types the session's ticket into its Claude's prompt, for you to send. */
 function sendBrief(session: Session) {
   const t = session.ticket;
@@ -304,10 +311,8 @@ function sendBrief(session: Session) {
     showToast(`Open ${sessionLabel(session)} first`, 3000);
     return;
   }
-  const full = ticketStore.tickets.find((x) => ticketKey(x) === ticketKey(t));
-  const ticket: Ticket = full ?? { ...t, project: "", status: "", color: null, updated: "", branch: null };
   ws.reveal(pane);
-  pane.term.paste(attachPrompt(ticket, session.branch));
+  pane.term.paste(attachPrompt(ticketDetails(session), session.branch));
   pane.focus();
   showToast("Brief typed into Claude's prompt. Press Enter to send it.", 3000);
 }
@@ -338,6 +343,7 @@ const sessionBarActions: SessionBarActions = {
   },
   sendBrief,
   openUrl: (url) => void openUrl(url),
+  ticketDetails,
 };
 
 /** Redraws every pane's header: a session's bar, or a plain shell's title. */
