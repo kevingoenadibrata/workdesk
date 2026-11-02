@@ -1,5 +1,6 @@
 mod agents;
 mod appicon;
+mod browser;
 mod dirs;
 mod files;
 mod git;
@@ -104,6 +105,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(agents::AgentState::default())
         .manage(servers::ServerState::default())
+        .manage(browser::BrowserState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
             Ok(())
@@ -129,6 +131,15 @@ pub fn run() {
             quit_app,
             close_main_window,
             appicon::set_app_icon,
+            browser::browser_open,
+            browser::browser_place,
+            browser::browser_navigate,
+            browser::browser_go,
+            browser::browser_reload,
+            browser::browser_focus,
+            browser::browser_focus_main,
+            browser::browser_close,
+            browser::browser_set_keys,
             glow::edge_glow,
             onboarding::open_onboarding,
             pty::pty_spawn,

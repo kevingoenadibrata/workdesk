@@ -70,7 +70,7 @@ export class Sidebar {
 
     // Clicking around the sidebar shouldn't leave the terminal unfocused.
     root.addEventListener("click", () => {
-      if (!this.renaming) this.ws.activeTab?.session.term.focus();
+      if (!this.renaming) this.ws.activeTab?.session.focus();
     });
   }
 
@@ -541,7 +541,7 @@ export class Sidebar {
         else this.ws.renameGroup(id, input.value);
       }
       this.render();
-      this.ws.activeTab?.session.term.focus();
+      this.ws.activeTab?.session.focus();
     };
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();

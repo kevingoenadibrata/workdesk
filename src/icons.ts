@@ -2,6 +2,7 @@ import { createElement, type IconNode } from "lucide";
 
 export {
   AppWindow,
+  ArrowLeft,
   ArrowUpRight,
   ArrowDown,
   ArrowUp,
@@ -23,6 +24,7 @@ export {
   Folder,
   FolderGit2,
   FolderOpen,
+  Globe,
   GitBranch,
   GitBranchPlus,
   GitMerge,

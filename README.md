@@ -116,6 +116,7 @@ Hand-made originals like **Ember**, **Glacier** and **Sakura Night**, plus the p
 
 - **Sessions restore.** Quit and reopen, and your tabs, groups and splits are where you left them.
 - **⌘-click a file path** in the output to open it at that line in VS Code, Cursor, Zed, Windsurf, Sublime or Xcode.
+- **Browser panes.** <kbd>⌘</kbd><kbd>⇧</kbd><kbd>B</kbd> opens a page in a tab, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> splits one in beside a shell. Type a port like `3000` for a local server; opening one from Local Servers puts it next to the shell running it.
 - **Drag files in.** Dropped files are pasted as shell-escaped paths, so you can drop images onto Claude Code.
 - **Safe close.** Workdesk asks before closing a pane that's still running something.
 - **Rebindable shortcuts**, a searchable shortcuts page, and terminal search (<kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd>).
@@ -164,6 +165,8 @@ Hold <kbd>⌘</kbd> anywhere to see hints, or press <kbd>⌘</kbd><kbd>/</kbd> f
 | **Search tabs** | <kbd>⌘</kbd><kbd>F</kbd> | |
 | **Go to tab** | <kbd>⌘</kbd><kbd>1</kbd> … <kbd>⌘</kbd><kbd>9</kbd> | <kbd>9</kbd> goes to the last tab |
 | **Split right / down** | <kbd>⌘</kbd><kbd>D</kbd> / <kbd>⌘</kbd><kbd>⇧</kbd><kbd>D</kbd> | Up to six panes |
+| **New browser tab** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>B</kbd> | A site, a search, or a port like `3000` |
+| **Split in a browser** | <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> | To the right of the focused pane |
 | **Maximize pane** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>↩</kbd> | |
 | **Next / previous pane** | <kbd>⌘</kbd><kbd>]</kbd> / <kbd>⌘</kbd><kbd>[</kbd> | |
 | **Group selected tabs** | <kbd>⌘</kbd><kbd>G</kbd> | |
