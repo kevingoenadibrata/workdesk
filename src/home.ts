@@ -237,6 +237,12 @@ export class HomePage extends Page {
     this.source.refresh();
   }
 
+  /** Opens Home with the new-ticket modal up (the notch's "Ticket" button). */
+  compose() {
+    if (!this.isOpen) this.open();
+    this.openComposer(undefined, null);
+  }
+
   close() {
     clearTimeout(this.clockTimer);
     this.clock = null;

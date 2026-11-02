@@ -4,6 +4,7 @@ mod dirs;
 mod files;
 mod git;
 mod glow;
+mod notch;
 mod onboarding;
 mod pty;
 mod servers;
@@ -100,8 +101,12 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(agents::AgentState::default())
         .manage(servers::ServerState::default())
+        .manage(notch::NotchState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
+            if let Err(e) = notch::open(app.handle()) {
+                eprintln!("notch: {e}");
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -127,6 +132,9 @@ pub fn run() {
             appicon::set_app_icon,
             glow::edge_glow,
             onboarding::open_onboarding,
+            notch::notch_hit,
+            notch::notch_jump,
+            notch::notch_action,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
