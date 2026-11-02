@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Days Pipeline Status</title>
+<style>
+  :root { --bg:#fff; --fg:#1a1a1a; --muted:#6b6b6b; --line:#e5e5e5; --bar:#2f6fde; --warn:#c2410c; --ok:#15803d; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141414; --fg:#ececec; --muted:#9a9a9a; --line:#2c2c2c; --bar:#5b8ff0; --warn:#fb923c; --ok:#4ade80; }
+  }
+  body { background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system, system-ui, sans-serif; margin:0; padding:24px 16px; }
+  main { max-width:760px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .steps { display:flex; gap:8px; flex-wrap:wrap; margin:20px 0 12px; }
+  .step { border:1px solid var(--line); border-radius:6px; padding:4px 10px; font-size:13px; color:var(--muted); }
+  .step.done { color:var(--ok); border-color:var(--ok); }
+  .step.now { color:var(--fg); border-color:var(--bar); font-weight:600; }
+  .bar { height:10px; background:var(--line); border-radius:5px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--bar); width:0; transition:width .4s; }
+  .big { font-size:28px; font-weight:600; margin:12px 0 2px; font-variant-numeric:tabular-nums; }
+  .warn { color:var(--warn); }
+  pre { border:1px solid var(--line); border-radius:6px; padding:12px; font-size:12px; overflow-x:auto; white-space:pre-wrap; word-break:break-word; max-height:340px; overflow-y:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Days pipeline</h1>
+  <div class="muted" id="file">Looking for the latest run…</div>
+  <div class="steps" id="steps"></div>
+  <div class="big" id="big">—</div>
+  <div class="muted" id="sub"></div>
+  <div class="bar" style="margin-top:10px"><div id="fill"></div></div>
+  <p class="warn" id="warns"></p>
+  <div class="muted">Log tail · refreshes every 5 s</div>
+  <pre id="log"></pre>
+</main>
+<script>
+const STEPS = ["download", "build", "review", "apply"];
+const fmt = s => s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.round(s/60)} min` : `${(s/3600).toFixed(1)} h`;
+
+async function latestLog() {
+  const html = await (await fetch(".cache/", {cache: "no-store"})).text();
+  const logs = [...new Set(html.match(/night-[\d-]+\.log/g) || [])].sort();
+  return logs.at(-1);
+}
+
+async function tick() {
+  try {
+    const name = await latestLog();
+    if (!name) { document.getElementById("file").textContent = "No run logs yet."; return; }
+    const text = await (await fetch(".cache/" + name, {cache: "no-store"})).text();
+    const lines = text.split("\n");
+    const m = name.match(/night-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
+    const start = new Date(+m[1], m[2]-1, +m[3], +m[4], +m[5]);
+    const elapsed = (Date.now() - start) / 1000;
+    const finished = text.includes("== done");
+    let step = 0;
+    lines.forEach(l => { const s = l.match(/^== (\d)\/4/); if (s) step = +s[1]; });
+
+    document.getElementById("file").textContent = `${name} · started ${start.toLocaleTimeString()} · ${fmt(elapsed)} elapsed`;
+    document.getElementById("steps").innerHTML = STEPS.map((s, i) =>
+      `<span class="step ${finished || i+1 < step ? "done" : i+1 === step ? "now" : ""}">${i+1}. ${s}</span>`).join("");
+
+    const prog = lines.map(l => l.match(/^\[(\d+)\/(\d+)\] (\S+)/)).filter(Boolean).at(-1);
+    let pct = 0, big = "—", sub = "";
+    if (finished) {
+      pct = 100; big = "Done";
+      sub = (lines.find(l => l.startsWith("Dates covered")) || "");
+    } else if (step === 1 && prog) {
+      const [, n, total, date] = prog; pct = 100 * n / total;
+      big = `${n} / ${total} dates`;
+      const rate = elapsed / n;
+      sub = `Downloading ${date} · ~${Math.round(rate)}s per date · download done in ~${fmt(rate * (total - n))}, then ~15 min of review`;
+    } else if (step > 1) {
+      pct = 100; big = ["", "", "Building", "Haiku review", "Applying"][step];
+      const reviewing = lines.filter(l => l.startsWith("-- reviewing")).at(-1);
+      sub = step === 3 && reviewing ? reviewing.replace("-- ", "") : "";
+    }
+    document.getElementById("big").textContent = big;
+    document.getElementById("sub").textContent = sub;
+    document.getElementById("fill").style.width = pct + "%";
+    document.getElementById("warns").textContent = lines.filter(l => l.startsWith("!!")).join("\n");
+    document.getElementById("log").textContent = lines.slice(-25).join("\n");
+  } catch (e) {
+    document.getElementById("file").textContent = "Can't reach the server — is `python3 -m http.server 8000 -d days` running?";
+  }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

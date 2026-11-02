@@ -4,7 +4,7 @@
 
 <p align="center">
   <b>A terminal app for people who keep a lot of shells open.</b><br>
-  Dev servers, test watchers, logs, and a few Claude Code agents, all in one tidy desk.
+  Dev servers, test watchers, logs, and a few Claude Code agents working your tickets, all in one tidy desk.
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Vertical tabs take the name of the folder they're in, so `api`, `web` and `billi
 <td width="50%" valign="top">
 
 ### 🪟 Split panes
-<kbd>⌘</kbd><kbd>D</kbd> splits right and <kbd>⌘</kbd><kbd>⇧</kbd><kbd>D</kbd> splits down, up to six panes per tab. Maximize one pane, move between them with the arrow keys, or unsplit them back into tabs.
+<kbd>⌘</kbd><kbd>D</kbd> splits right and <kbd>⌘</kbd><kbd>⇧</kbd><kbd>D</kbd> splits down, up to six panes per tab. Drag tabs and panes to rearrange them, with a preview of where they'll land, or press <kbd>⌘</kbd><kbd>L</kbd> to pick a grid layout. Maximize one pane, move between them with the arrow keys, or unsplit them back into tabs.
 
 </td>
 </tr>
@@ -102,13 +102,25 @@ Hand-made originals like **Ember**, **Glacier** and **Sakura Night**, plus the p
 
 <br>
 
-### 🤖 Agent Monitor
+### 🏠 Home: tickets → Claude → pull requests
 
-<kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd> opens one page that shows every coding agent running in your panes: **Claude Code**, **Codex** and **opencode**. For each one you see what it's doing, the last thing you asked it, and whether it's **waiting on you**. Click a card to jump to its pane. A side panel shows your **5-hour and weekly usage limits** for each harness, so a limit doesn't catch you halfway through a task.
+<kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd> opens Home, a board that goes from ticket to merged PR in three lanes:
 
-<p align="center">
-  <img src="docs/media/monitor.png" alt="Agent Monitor" width="900">
-</p>
+- **Backlog.** Tickets assigned to you from **GitHub Issues**, **Linear** and **ClickUp**, with search and filters. Open one to read its description.
+- **With an agent.** Click **Hand to Claude** and Workdesk makes a git worktree for the ticket (in `~/.workdesk/worktrees/<repo>/<branch>`), opens a tab there and starts Claude Code on it. You can follow its status and recent output from the card. Toasts and macOS notifications tell you when it needs you or opens a PR.
+- **Pull requests.** Your open GitHub PRs. A ticket's run is tracked until its PR merges.
+
+Every coding agent running in your panes shows up here too: **Claude Code**, **Codex** and **opencode**, each with what it's doing and whether it's **waiting on you**. The header shows your **5-hour and weekly usage limits** for Claude and Codex, and a **local servers** button that opens a drawer listing every web server on your machine, whether or not you started it in Workdesk (<kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd>).
+
+Connect your accounts in **Settings → Integrations**. Tokens are stored in the macOS Keychain, and GitHub falls back to `gh auth token` if you don't paste one.
+
+<br>
+
+### 🌿 Git, diffs and files in every pane
+
+- **Git status cards.** Panes inside a repo show the repo, the branch (with commits ahead/behind) and lines added/removed. Click the branch to search, check out or create a branch.
+- **Changes panel.** Click the <code>+N −M</code> card to dock a diff of your changes inside the pane, unified or split.
+- **File tree.** <kbd>⌘</kbd><kbd>E</kbd> docks a file tree in the pane. It follows the shell when you `cd`.
 
 <br>
 
@@ -168,10 +180,12 @@ Hold <kbd>⌘</kbd> anywhere to see hints, or press <kbd>⌘</kbd><kbd>/</kbd> f
 | **New browser tab** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>B</kbd> | A site, a search, or a port like `3000` |
 | **Split in a browser** | <kbd>⌘</kbd><kbd>⌥</kbd><kbd>B</kbd> | To the right of the focused pane |
 | **Maximize pane** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>↩</kbd> | |
+| **Change layout** | <kbd>⌘</kbd><kbd>L</kbd> | Pick a grid, then swap panes |
+| **File tree** | <kbd>⌘</kbd><kbd>E</kbd> | Docked in the current pane |
 | **Next / previous pane** | <kbd>⌘</kbd><kbd>]</kbd> / <kbd>⌘</kbd><kbd>[</kbd> | |
 | **Group selected tabs** | <kbd>⌘</kbd><kbd>G</kbd> | |
-| **Agent Monitor** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd> | |
-| **Local Servers** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd> | |
+| **Home** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd> | Tickets, agents and PRs |
+| **Local servers** | <kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd> | Opens Home's servers drawer |
 | **Settings** | <kbd>⌘</kbd><kbd>,</kbd> | |
 | **Toggle sidebar** | <kbd>⌘</kbd><kbd>B</kbd> | |
 
