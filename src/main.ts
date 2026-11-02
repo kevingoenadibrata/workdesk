@@ -8,6 +8,7 @@ import { DirPicker } from "./dirpicker";
 import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor } from "./monitor";
+import { feedNotch } from "./notchFeed";
 import { LocalServers, serverUrl } from "./servers";
 import { ticketStore, type Ticket } from "./tickets";
 import {
@@ -108,6 +109,18 @@ const homePage = new HomePage(
   }),
 );
 new HomeRow($("#home-slot"), homePage, monitor);
+// The strip around the MacBook notch shows the agents; clicking one shows its pane.
+// Its buttons open Home's new-ticket modal or Teleport here, where you can type.
+feedNotch(monitor, {
+  jump: (ptyId) => {
+    const agent = monitor.current.find((a) => a.session.ptyId === ptyId);
+    if (!agent) return;
+    ws.reveal(agent.session);
+    Page.closeAll();
+  },
+  newTicket: () => homePage.newTicket(),
+  teleport: () => newTabIn(),
+});
 
 /**
  * Asks which folder's repo to start `branch` in (Teleport, folders only),

@@ -5,7 +5,8 @@
   "windows": [],
   "webviews": [
     "main",
-    "onboarding"
+    "onboarding",
+    "notch"
   ],
   "permissions": [
     "core:default",

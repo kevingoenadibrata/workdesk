@@ -1,0 +1,274 @@
+/* The strip around the MacBook notch (notch.html, src/notch.ts). The window is
+   transparent and the island hangs from its top edge, centered on the notch. */
+
+html.notch-window,
+html.notch-window body {
+  background: transparent;
+  display: block;
+}
+
+.island {
+  --curve: cubic-bezier(0.32, 1.25, 0.5, 1);
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  color: #f2f2f4;
+  border-radius: 0 0 10px 10px;
+  transition:
+    width 0.38s var(--curve),
+    height 0.38s var(--curve),
+    border-radius 0.38s var(--curve);
+}
+
+/* The notch's top corners curve outward into the menu bar; draw that too. */
+.island::before,
+.island::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 8px;
+}
+
+.island::before {
+  left: -8px;
+  background: radial-gradient(circle at 0 100%, transparent 7.5px, #000 8px);
+}
+
+.island::after {
+  right: -8px;
+  background: radial-gradient(circle at 100% 100%, transparent 7.5px, #000 8px);
+}
+
+.island.open {
+  border-radius: 0 0 22px 22px;
+}
+
+/* ---- collapsed: a bot on the left of the notch, a count on the right ---- */
+
+.ear {
+  position: absolute;
+  top: 0;
+  width: var(--ear);
+  height: var(--notch-h);
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.island.eared .ear {
+  opacity: 1;
+  transition-delay: 0.12s;
+}
+
+.ear.left {
+  left: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  --bot-face: color-mix(in srgb, var(--bot) 30%, #fff);
+}
+
+.ear.right {
+  right: 4px;
+  font: 600 13px/1 var(--code, ui-monospace, monospace);
+  color: var(--st-working);
+}
+
+.ear.right.needs-you {
+  color: var(--st-waiting);
+  animation: notch-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes notch-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ---- open: the list of agents ---- */
+
+/* Head, agents, bar: the agents scroll if there are too many, the bar stays. */
+.panel {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 12px);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.island.open .panel {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0.1s;
+}
+
+/* The top strip sits beside the camera, so its text keeps to the sides. */
+.panel-head {
+  height: var(--notch-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9a9aa3;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 6px 10px 4px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  --bot-face: color-mix(in srgb, var(--bot) 30%, #fff);
+}
+
+.row:hover {
+  background: #1a1a1f;
+}
+
+.row-bot {
+  width: 28px;
+  height: 28px;
+}
+
+.row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-detail {
+  font: 11px/1.4 var(--code, ui-monospace, monospace);
+  color: #8a8a93;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--st, var(--st-unknown));
+  background: color-mix(in srgb, var(--st, var(--st-unknown)) 16%, transparent);
+}
+
+.row[data-status="thinking"] { --st: var(--st-thinking); }
+.row[data-status="working"] { --st: var(--st-working); }
+.row[data-status="waiting"] { --st: var(--st-waiting); }
+.row[data-status="idle"] { --st: var(--st-idle); }
+.row[data-status="error"] { --st: var(--st-error); }
+
+.empty {
+  padding: 10px 12px 4px;
+  font-size: 12px;
+  color: #8a8a93;
+  text-align: center;
+}
+
+/* ---- the bar: New ticket, Teleport, usage ---- */
+
+.panel-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 10px 10px;
+  padding-top: 8px;
+  border-top: 1px solid #1f1f25;
+}
+
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: #16161b;
+  color: #d8d8de;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.act:hover {
+  background: #232329;
+  color: #fff;
+}
+
+.usage {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+.meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 11px/1 var(--code, ui-monospace, monospace);
+  color: #8a8a93;
+}
+
+.meter b {
+  font-weight: 600;
+  color: #6c6c75;
+}
+
+.meter i {
+  display: block;
+  width: 34px;
+  height: 4px;
+  border-radius: 2px;
+  background: #222228;
+  overflow: hidden;
+}
+
+.meter u {
+  display: block;
+  height: 100%;
+  background: var(--st-idle);
+  border-radius: inherit;
+}
+
+.meter[data-level="ahead"] u {
+  background: var(--st-waiting);
+}
+
+.meter[data-level="high"] u {
+  background: var(--st-error);
+}
+
+.meter[data-level="high"] span {
+  color: var(--st-error);
+}
