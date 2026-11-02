@@ -119,8 +119,9 @@ function score(path: string, label: string, query: string): number {
  *   With no query it lists favorites, home and recent directories; plain text
  *   filters those (plus folders in ~), favorites always first; a query
  *   starting with `~` or `/` browses the filesystem, → completing into the
- *   highlighted folder. A leading "@name" picks a macro whose commands run in
- *   the new tab; "#name" opens a loadout instead of one tab.
+ *   highlighted folder, and also lists favorites whose name matches. A
+ *   leading "@name" picks a macro whose commands run in the new tab; "#name"
+ *   opens a loadout instead of one tab.
  * - History and Favorites list just recent or starred folders.
  * - Sessions: picking one picks it back up (or goes to its pane); ⌘⌫ ends it.
  * ⌘D stars the highlighted folder in any of them.
@@ -543,9 +544,20 @@ export class DirPicker {
         const path = join(n);
         return { path, kind: favs.has(path) ? "favorite" : "dir" };
       });
-      // Starred folders float to the top of the listing.
-      const sorted = [...children.filter((c) => c.kind === "favorite"), ...children.filter((c) => c.kind !== "favorite")];
-      if (partial) return sorted;
+      const starred = children.filter((c) => c.kind === "favorite");
+      const rest = children.filter((c) => c.kind !== "favorite");
+      if (partial) {
+        // Starred folders float to the top, then favorites elsewhere whose
+        // name matches, so searching finds them from any folder.
+        const listed = new Set(children.map((c) => c.path));
+        const elsewhere = favorites
+          .map((c, i) => ({ c, i, s: listed.has(c.path) ? 0 : score(c.path, "", partial) }))
+          .filter((r) => r.s > 0)
+          .sort((a, b) => b.s - a.s || a.i - b.i)
+          .map((r) => r.c);
+        return [...starred, ...elsewhere, ...rest];
+      }
+      const sorted = [...starred, ...rest];
       // "~/foo/" offers foo itself first.
       const self: Candidate = { path: dir, kind: favs.has(dir) ? "favorite" : dir === this.home ? "home" : "dir" };
       return [self, ...sorted];
