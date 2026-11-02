@@ -28,6 +28,7 @@ import { renderSessionBar, type SessionBarActions } from "./sessionbar";
 import { openTicketPicker } from "./ticketpicker";
 import { openBranchPicker } from "./branchpicker";
 import { showToast } from "./toast";
+import { withSetupOverlay } from "./loading";
 import type { TermSession } from "./terminal";
 import { HomePage, HomeRow, liveHomeSource } from "./home";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -165,18 +166,21 @@ async function handToClaude(ticket: Ticket, branch: string): Promise<string> {
   const remembered = repoFor(ticket);
   const dir = remembered ?? (await pickRepo(ticket));
   if (!dir) return "";
-  let started;
-  try {
-    started = await sessionsApi.start(dir, branch, buildPrompt(ticket, branch));
-  } catch (e) {
-    // A bad pick shouldn't stick.
-    if (/isn't in a git repo|bare repo/.test(String(e))) rememberRepo(ticket, undefined);
-    throw e;
-  }
-  rememberRepo(ticket, dir);
-  const session = sessionFrom(started, branch, ticket.id, { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url });
-  sessionStore.add(session);
-  openSessionPane(session, claudeStart(session, true));
+  const started = await withSetupOverlay({ ticket: ticket.id, branch }, async () => {
+    let started;
+    try {
+      started = await sessionsApi.start(dir, branch, buildPrompt(ticket, branch));
+    } catch (e) {
+      // A bad pick shouldn't stick.
+      if (/isn't in a git repo|bare repo/.test(String(e))) rememberRepo(ticket, undefined);
+      throw e;
+    }
+    rememberRepo(ticket, dir);
+    const session = sessionFrom(started, branch, ticket.id, { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url });
+    sessionStore.add(session);
+    openSessionPane(session, claudeStart(session, true));
+    return started;
+  });
   const extras = [started.base && `from ${started.base}`, started.copied.length && `copied ${started.copied.join(", ")}`].filter(Boolean);
   return `${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}${extras.length ? ` (${extras.join("; ")})` : ""}`;
 }
@@ -236,10 +240,13 @@ async function nameSession(dir: string) {
 
 async function startSession(dir: string, branch: string) {
   try {
-    const started = await sessionsApi.start(dir, branch, "");
-    const session = sessionFrom(started, branch, branch, null);
-    sessionStore.add(session);
-    openSessionPane(session, claudeStart(session, false));
+    const started = await withSetupOverlay({ branch }, async () => {
+      const started = await sessionsApi.start(dir, branch, "");
+      const session = sessionFrom(started, branch, branch, null);
+      sessionStore.add(session);
+      openSessionPane(session, claudeStart(session, false));
+      return started;
+    });
     showToast(`${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}`, 3000);
   } catch (e) {
     showToast(String(e), 6000);
