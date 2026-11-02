@@ -5,6 +5,7 @@ import { botSvg, type BotFace } from "./bot";
 import { harnessLogo } from "./harnessLogos";
 import { logLines } from "./monitorSettings";
 import type { TermSession } from "./terminal";
+import { sessionStore } from "./sessions";
 
 export const HARNESS_NAMES: Record<AgentInfo["harness"], string> = {
   claude: "Claude Code",
@@ -45,6 +46,12 @@ export interface Agent extends AgentInfo {
   since: number;
   /** What it was doing before, so a finished agent can look pleased. */
   from?: AgentStatus;
+}
+
+/** What an agent is working on: its session's ticket title when it has one, else its prompt's first line. */
+export function agentTask(agent: Pick<Agent, "session" | "prompt">): string | null {
+  const id = agent.session.sessionId;
+  return (id && sessionStore.get(id)?.ticket?.title) || agent.prompt;
 }
 
 // ---- reading the screen ----
@@ -178,8 +185,9 @@ export function fillAgentCard(card: HTMLElement, agent: Agent, now: number) {
     word.classList.toggle("on", (word as HTMLElement).dataset.status === agent.status);
   }
   const prompt = q(".agent-prompt") as HTMLElement;
-  setText(prompt, agent.prompt ?? "No prompt yet");
-  prompt.classList.toggle("empty", !agent.prompt);
+  const task = agentTask(agent);
+  setText(prompt, task ?? "No prompt yet");
+  prompt.classList.toggle("empty", !task);
   const shown = agent.lastLog;
   const log = q(".agent-log") as HTMLElement;
   while (log.children.length > shown.length) log.lastElementChild!.remove();
