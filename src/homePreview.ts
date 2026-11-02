@@ -263,6 +263,13 @@ const source: HomeSource = {
     emit();
     return t;
   },
+  updateTicket: async (t, edit) => {
+    await new Promise((r) => setTimeout(r, 200));
+    const updated = { ...t, title: edit.title.trim(), project: edit.project.trim(), body: edit.body.trim(), updated: new Date().toISOString() };
+    tickets = [updated, ...tickets.filter((x) => ticketKey(x) !== ticketKey(t))];
+    emit();
+    return updated;
+  },
   deleteTicket: (t) => {
     tickets = tickets.filter((x) => ticketKey(x) !== ticketKey(t));
     emit();

@@ -1,6 +1,6 @@
 import "./home.css";
 import { Page, el } from "./page";
-import { ArrowRight, ArrowUpRight, Bot, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Plus, Search, Settings, Trash2, X, icon } from "./icons";
+import { ArrowRight, ArrowUpRight, Bot, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Search, Settings, Trash2, X, icon } from "./icons";
 import { botSvg, type BotFace } from "./bot";
 import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
@@ -65,8 +65,17 @@ export interface HomeSource {
   targets(provider: Exclude<Writable, "workdesk">): Promise<Target[]>;
   /** Writes a ticket; it's in the backlog once this resolves. */
   createTicket(draft: Draft): Promise<Ticket>;
+  /** Rewrites one of Workdesk's own tickets: its title, project and description. */
+  updateTicket(ticket: Ticket, edit: TicketEdit): Promise<Ticket>;
   /** Deletes one of Workdesk's own tickets, with Undo. */
   deleteTicket(ticket: Ticket): void;
+}
+
+/** What can be changed on one of Workdesk's own tickets. */
+export interface TicketEdit {
+  title: string;
+  project: string;
+  body: string;
 }
 
 const COMPOSE_KEY = "workdesk.newTicket";
@@ -784,9 +793,9 @@ export class HomePage extends Page {
   // ---- a ticket's details ----
 
   /** A modal with the ticket's description and details, and Hand to Claude. */
-  private openTicket(t: Ticket) {
+  private openTicket(t: Ticket, returnTo?: HTMLElement | null) {
     this.closeTicket?.();
-    const returnFocus = document.activeElement as HTMLElement | null;
+    const returnFocus = returnTo !== undefined ? returnTo : (document.activeElement as HTMLElement | null);
     const branch = branchName(t);
     const backdrop = el("div", "home-modal-backdrop");
     const modal = el("div", "home-modal");
@@ -842,6 +851,10 @@ export class HomePage extends Page {
     if (!native) left.append(secondary(Copy, "Copy link", () => void copy(t.url).then(() => showToast(`Copied link to ${t.id}`))));
     else
       left.append(
+        secondary(Pencil, "Edit", () => {
+          close(false);
+          this.openComposer(t, returnFocus);
+        }),
         secondary(Trash2, "Delete", () => {
           close();
           this.source.deleteTicket(t);
@@ -886,13 +899,16 @@ export class HomePage extends Page {
   /** The repos and lists each service offered, read once per visit. */
   private targetCache = new Map<Writable, Promise<Target[]>>();
 
-  /** A modal to write a ticket: where it goes (Workdesk, GitHub or ClickUp), a title and a description. */
-  private openComposer() {
+  /**
+   * A modal to write a ticket: where it goes (Workdesk, GitHub or ClickUp), a title and a description.
+   * Given one of Workdesk's own tickets, it edits that one instead and goes back to its details.
+   */
+  private openComposer(editing?: Ticket, returnTo?: HTMLElement | null) {
     this.closeTicket?.();
-    const returnFocus = document.activeElement as HTMLElement | null;
+    const returnFocus = returnTo !== undefined ? returnTo : (document.activeElement as HTMLElement | null);
     const memory = loadCompose();
-    const writable = this.source.writable();
-    let provider: Writable = writable.includes(memory.provider) ? memory.provider : "workdesk";
+    const writable: Writable[] = editing ? ["workdesk"] : this.source.writable();
+    let provider: Writable = editing ? "workdesk" : writable.includes(memory.provider) ? memory.provider : "workdesk";
 
     const backdrop = el("div", "home-modal-backdrop");
     const modal = el("form", "home-modal home-compose");
@@ -901,7 +917,7 @@ export class HomePage extends Page {
     modal.setAttribute("aria-labelledby", "home-compose-title");
 
     const head = el("div", "home-modal-head");
-    const heading = el("h2", "home-compose-heading", "New ticket");
+    const heading = el("h2", "home-compose-heading", editing ? `Edit ${editing.id}` : "New ticket");
     heading.id = "home-compose-title";
     const x = el("button", "home-modal-x");
     x.type = "button";
@@ -925,6 +941,8 @@ export class HomePage extends Page {
       return b;
     });
     dests.append(...destButtons);
+    // An edit stays where the ticket is.
+    dests.hidden = !!editing;
     const targetBox = el("div", "home-compose-target");
     where.append(dests, targetBox);
 
@@ -939,7 +957,7 @@ export class HomePage extends Page {
     const error = el("div", "home-compose-error");
     error.hidden = true;
     const foot = el("div", "home-modal-foot");
-    const hint = el("span", "home-compose-hint", "⌘↵ to create");
+    const hint = el("span", "home-compose-hint", editing ? "⌘↵ to save" : "⌘↵ to create");
     const submit = el("button", "home-hand home-modal-hand");
     submit.type = "submit";
     foot.append(hint, submit);
@@ -960,8 +978,9 @@ export class HomePage extends Page {
       provider = p;
       showError("");
       for (const b of destButtons) b.setAttribute("aria-checked", String(b.dataset.provider === p));
-      submit.replaceChildren(icon(Plus, 14), p === "workdesk" ? "Create ticket" : `Create in ${providerName(p)}`);
-      const remembered = memory.targets[p];
+      if (editing) submit.replaceChildren(icon(Check, 14), "Save");
+      else submit.replaceChildren(icon(Plus, 14), p === "workdesk" ? "Create ticket" : `Create in ${providerName(p)}`);
+      const remembered = editing ? { id: editing.project, name: editing.project } : memory.targets[p];
       const token = ++loadToken;
       if (p === "workdesk") {
         // Workdesk's own tickets just name a project; known ones are suggested.
@@ -1012,6 +1031,10 @@ export class HomePage extends Page {
       );
     };
     pick(provider);
+    if (editing) {
+      title.value = editing.title;
+      body.value = editing.body ?? "";
+    }
 
     const close = (refocus = true) => {
       if (!backdrop.isConnected) return;
@@ -1052,6 +1075,23 @@ export class HomePage extends Page {
       modal.classList.add("busy");
       showError("");
       const p = provider;
+      if (editing) {
+        void this.source.updateTicket(editing, { title: title.value, project: t.name, body: body.value }).then(
+          (ticket) => {
+            close(false);
+            this.render();
+            this.showFlash(`Saved ${ticket.id}`);
+            this.openTicket(ticket, returnFocus);
+          },
+          (err) => {
+            busy = false;
+            submit.disabled = false;
+            modal.classList.remove("busy");
+            showError(String(err));
+          },
+        );
+        return;
+      }
       void this.source.createTicket({ provider: p, target: t, title: title.value, body: body.value }).then(
         (ticket) => {
           try {
@@ -1526,6 +1566,7 @@ export function liveHomeSource(
     writable: () => WRITABLE.filter((p) => p === "workdesk" || tickets.connected.includes(p)),
     targets: (p) => ticketsApi.targets(p),
     createTicket: (d) => tickets.create(d),
+    updateTicket: async (t, edit) => tickets.updateNative(t.id, edit),
     deleteTicket: (t) => {
       const gone = tickets.removeNative(t.id);
       if (gone) showToast(`Deleted ${t.id}`, 5000, { label: "Undo", run: () => tickets.restoreNative(gone) });

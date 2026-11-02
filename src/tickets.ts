@@ -264,6 +264,20 @@ export class TicketStore {
     return ticket;
   }
 
+  /** Rewrites one of Workdesk's own tickets; returns it as saved. */
+  updateNative(id: string, edit: { title: string; project: string; body: string }): Ticket {
+    const t = this.native.find((x) => x.id === id);
+    if (!t) throw `${id} isn't in Workdesk any more`;
+    const title = edit.title.trim();
+    if (!title) throw "Give the ticket a title";
+    const updated: Ticket = { ...t, title, project: edit.project.trim(), body: edit.body.trim(), updated: new Date().toISOString() };
+    // Newest first, so it moves to the top like a new one.
+    this.native = [updated, ...this.native.filter((x) => x !== t)];
+    this.saveNative();
+    this.emit();
+    return updated;
+  }
+
   /** Forgets one of Workdesk's own tickets; returns it, for Undo. */
   removeNative(id: string): Ticket | undefined {
     const t = this.native.find((x) => x.id === id);
