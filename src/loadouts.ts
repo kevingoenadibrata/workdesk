@@ -6,6 +6,8 @@ const KEY = "workdesk.loadouts";
 export interface LoadoutPane {
   dir: string;
   macro?: string;
+  /** Set for a browser pane: the page it opens (empty for none). */
+  url?: string;
 }
 
 /** A tab as a grid of panes, by column, like a saved session's tab. */
@@ -52,7 +54,12 @@ function readTab(t: any): LoadoutTab | null {
     .map((c: any[]) =>
       c
         .filter((p) => p && typeof p.dir === "string")
-        .map((p): LoadoutPane => ({ dir: p.dir, macro: typeof p.macro === "string" && p.macro ? p.macro : undefined })),
+        .map(
+          (p): LoadoutPane =>
+            typeof p.url === "string"
+              ? { dir: p.dir, url: p.url }
+              : { dir: p.dir, macro: typeof p.macro === "string" && p.macro ? p.macro : undefined },
+        ),
     )
     .filter((c: LoadoutPane[]) => c.length > 0);
   if (columns.length === 0) return null;

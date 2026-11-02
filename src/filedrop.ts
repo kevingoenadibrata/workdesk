@@ -35,6 +35,8 @@ export function installFileDrop(ws: Workspace) {
         const r = s.pane.getBoundingClientRect();
         return e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom;
       }) ?? tab.session;
+    // A browser pane has no prompt to type paths into.
+    if (session.kind !== "shell") return;
 
     const dt = e.dataTransfer!;
     const files = [...dt.files];

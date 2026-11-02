@@ -1,4 +1,5 @@
 import { TermSession } from "./terminal";
+import { BrowserPane } from "./browser";
 import { confirmClose } from "./closeGuard";
 import { gitStatus, processCwds, processNames } from "./pty";
 import { touchRecent } from "./recents";
@@ -195,6 +196,8 @@ export interface SavedTab {
   columns: string[][];
   /** The session each pane is (null for a plain shell), laid out like `columns`. */
   sessions?: (string | null)[][];
+  /** The page each browser pane shows (null for a shell), laid out like `columns`. */
+  urls?: (string | null)[][];
   /** Each column's share of the width, then each pane's share of its column's height. */
   sizes?: { cols: number[]; rows: number[][] };
   /** Column and row of the focused pane. */
@@ -344,8 +347,9 @@ export class Workspace {
     return tab;
   }
 
-  private createPane(tab: Tab): TermSession {
-    const session = new TermSession(tab.el);
+  /** A shell pane, or with `url` (empty for none yet) a browser pane. */
+  private createPane(tab: Tab, url?: string): TermSession {
+    const session = url === undefined ? new TermSession(tab.el) : new BrowserPane(tab.el, url);
     session.hooks = this.paneHooks(tab, session);
     return session;
   }
@@ -364,6 +368,8 @@ export class Workspace {
       onDragEnd: () => {
         this.paneDrag = null;
       },
+      // A page's title or address changed: retitle the tab and save it.
+      onTitle: () => this.emit(),
       onFocus: () => {
         if (tab.focused === session || !tab.sessions.includes(session)) return;
         tab.focused = session;
@@ -382,17 +388,55 @@ export class Workspace {
     return tab.columns[tab.find(tab.focused).col].length < MAX_ROWS;
   }
 
-  /** Splits the active tab's focused pane, opening a shell in `cwd` next to it. */
-  split(dir: "right" | "down", cwd?: string) {
+  /**
+   * Splits the active tab's focused pane, opening a shell in `cwd` next to
+   * it, or with `url` (empty for none yet) a browser pane.
+   */
+  split(dir: "right" | "down", cwd?: string, url?: string) {
     const tab = this.activeTab;
     if (!tab || !this.canSplit(tab, dir)) return;
-    const session = this.createPane(tab);
+    const session = this.createPane(tab, url);
     this.insertPane(tab, session, tab.focused, dir);
     tab.focused = session;
     tab.layout();
     session.focus();
     this.emit();
     void session.start(cwd);
+  }
+
+  /** Opens a browser on `url` (empty to type one in) in a new tab after the active one. */
+  newBrowserTab(url = ""): BrowserPane {
+    const tab = new Tab(this.nextTabId++);
+    tab.color = defaultColor();
+    this.termHost.append(tab.el);
+    const pane = this.createPane(tab, url) as BrowserPane;
+    tab.columns = [[pane]];
+    tab.focused = pane;
+    tab.layout();
+    this.tabs.set(tab.id, tab);
+    const loc = this.afterActive();
+    this.listFor(loc.groupId).splice(loc.index, 0, tab.id);
+    this.activate(tab.id);
+    // With no URL, activating it put the cursor in the address bar.
+    void pane.start();
+    return pane;
+  }
+
+  /**
+   * Opens `url` in a browser to the right of `beside` (say, the shell running
+   * its server) if that tab has room for another column, else in a new tab.
+   */
+  openBrowser(url: string, beside?: TermSession): BrowserPane {
+    const tab = beside && [...this.tabs.values()].find((t) => t.sessions.includes(beside));
+    if (!tab || !beside || tab.columns.length >= MAX_COLUMNS) return this.newBrowserTab(url);
+    if (tab.maximized) this.restoreGrid(tab);
+    const pane = this.createPane(tab, url) as BrowserPane;
+    this.insertPane(tab, pane, beside, "right");
+    tab.focused = pane;
+    tab.layout();
+    this.activate(tab.id);
+    void pane.start();
+    return pane;
   }
 
   /** The pane being dragged onto the active tab's panes: a pane header, or a single-pane tab from the sidebar. */
@@ -1039,6 +1083,9 @@ export class Workspace {
         color: tab.color,
         columns: tab.columns.map((c) => c.map((s) => s.cwd || s.startCwd)),
         sessions: tab.columns.map((c) => c.map((s) => s.sessionId ?? null)),
+        urls: tab.sessions.some((s) => s instanceof BrowserPane)
+          ? tab.columns.map((c) => c.map((s) => (s instanceof BrowserPane ? s.url : null)))
+          : undefined,
         sizes: { cols: tab.columns.map((c) => c[0].colWeight), rows: tab.columns.map((c) => c.map((s) => s.rowWeight)) },
         focus: [col, row],
       };
@@ -1056,7 +1103,7 @@ export class Workspace {
    * activating it. Returns its id, or null if the grid was empty.
    */
   private openGrid(
-    panes: { cwd?: string; commands?: string[]; macro?: string; sessionId?: string; sessionName?: string }[][],
+    panes: { cwd?: string; commands?: string[]; macro?: string; sessionId?: string; sessionName?: string; url?: string }[][],
     list: Entry[],
     opts: { focus?: [number, number]; title?: string; color?: GroupColor; sizes?: SavedTab["sizes"] } = {},
   ): number | null {
@@ -1066,7 +1113,7 @@ export class Workspace {
     this.termHost.append(tab.el);
     tab.columns = columns.map((c) =>
       c.map((p) => {
-        const pane = this.createPane(tab);
+        const pane = this.createPane(tab, p.url);
         pane.sessionId = p.sessionId;
         pane.sessionName = p.sessionId ? p.sessionName : undefined;
         return pane;
@@ -1107,13 +1154,14 @@ export class Workspace {
    * plain shell if that says it's gone. False if there were no tabs.
    */
   restore(saved: SavedLayout, resume: (sessionId: string) => { cwd: string; commands: string[]; name: string } | null = () => null): boolean {
-    const pane = (cwd: string, id: string | null | undefined) => {
+    const pane = (cwd: string, id: string | null | undefined, url: string | null | undefined) => {
+      if (typeof url === "string") return { url };
       const r = id ? resume(id) : null;
       return r ? { cwd: r.cwd, commands: r.commands, sessionId: id!, sessionName: r.name } : { cwd };
     };
     const openTab = (t: SavedTab, list: Entry[]) =>
       this.openGrid(
-        t.columns.map((c, i) => c.map((cwd, j) => pane(cwd, t.sessions?.[i]?.[j]))),
+        t.columns.map((c, i) => c.map((cwd, j) => pane(cwd, t.sessions?.[i]?.[j], t.urls?.[i]?.[j]))),
         list,
         { focus: t.focus, title: t.title, color: t.color, sizes: t.sizes },
       );
@@ -1152,7 +1200,9 @@ export class Workspace {
       return {
         title: tab.customTitle,
         color: tab.color,
-        columns: tab.columns.map((c) => c.map((s) => ({ dir: tildePath(s.cwd || s.startCwd), macro: s.macro }))),
+        columns: tab.columns.map((c) =>
+          c.map((s) => (s instanceof BrowserPane ? { dir: "", url: s.url } : { dir: tildePath(s.cwd || s.startCwd), macro: s.macro })),
+        ),
       };
     };
     const items: LoadoutItem[] = [];
@@ -1180,6 +1230,7 @@ export class Workspace {
     const grid = (t: LoadoutTab) =>
       t.columns.map((c) =>
         c.map((p) => {
+          if (p.url !== undefined) return { url: p.url };
           const macro = p.macro ? findMacro(p.macro) : undefined;
           return { cwd: normalizePath(p.dir) || undefined, commands: macro ? runnable(macro) : [], macro: macro?.name };
         }),

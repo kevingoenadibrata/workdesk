@@ -45,6 +45,8 @@ export type Action =
   | "maximizePane"
   | "arrangePanes"
   | "toggleFileTree"
+  | "newBrowser"
+  | "splitBrowser"
   | `goToTab${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /**
@@ -68,6 +70,8 @@ export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+shift+enter": "maximizePane",
   "mod+l": "arrangePanes",
   "mod+e": "toggleFileTree",
+  "mod+shift+b": "newBrowser",
+  "mod+alt+b": "splitBrowser",
   "mod+alt+arrowleft": "focusPaneLeft",
   "mod+alt+arrowright": "focusPaneRight",
   "mod+alt+arrowup": "focusPaneUp",
@@ -123,6 +127,13 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
       ["focusPaneRight", "Focus pane to the right"],
       ["focusPaneUp", "Focus pane above"],
       ["focusPaneDown", "Focus pane below"],
+    ],
+  },
+  {
+    title: "Browser",
+    actions: [
+      ["newBrowser", "New browser tab: a site, or a local server by its port"],
+      ["splitBrowser", "Split right with a browser"],
     ],
   },
   {

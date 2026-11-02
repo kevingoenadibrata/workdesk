@@ -14,6 +14,7 @@ import { homeDir } from "./recents";
 import { ArrowDown, ArrowUp, CaseSensitive, FolderGit2, FolderTree, GitBranch, Maximize2, Minimize2, Search, X, icon } from "./icons";
 import { currentTheme, onThemeChange, type Theme } from "./themes";
 import { currentFont, fontStack, onFontChange } from "./fonts";
+import { reclaimFocus } from "./webview";
 
 /** Live sessions, so a theme or font change repaints every terminal. */
 const sessions = new Set<TermSession>();
@@ -49,7 +50,11 @@ function searchDecorations(t: Theme): ISearchOptions["decorations"] {
   };
 }
 
-/** One xterm.js instance wired to one shell process. */
+/**
+ * One xterm.js instance wired to one shell process. A browser pane
+ * (BrowserPane, kind "web") is one too, with its terminal never opened, so
+ * it can sit in the same splits, tabs and layouts.
+ */
 export class TermSession {
   /** The pane: a header above the terminal. */
   readonly pane: HTMLDivElement;
@@ -67,7 +72,7 @@ export class TermSession {
   private maximizeButton: HTMLButtonElement;
   private treeButton: HTMLButtonElement;
   /** Holds the file tree (when open) beside the terminal. */
-  private body: HTMLDivElement;
+  protected body: HTMLDivElement;
   /** The file tree docked on the pane's left, once opened. */
   private tree?: FileTree;
   /** The changes since the last commit, docked on the pane's right, once opened. */
@@ -100,9 +105,12 @@ export class TermSession {
   rowWeight = 1;
 
   /** Set by the owning tab, and replaced when the pane moves to another tab. */
-  hooks = { onExit() {}, onFocus() {}, onClose() {}, onMaximize() {}, onDragStart() {}, onDragEnd() {} };
+  hooks = { onExit() {}, onFocus() {}, onClose() {}, onMaximize() {}, onDragStart() {}, onDragEnd() {}, onTitle() {} };
 
-  constructor(host: HTMLElement) {
+  constructor(
+    host: HTMLElement,
+    readonly kind: "shell" | "web" = "shell",
+  ) {
     this.pane = document.createElement("div");
     this.pane.className = "pane";
     this.header = document.createElement("div");
@@ -136,7 +144,8 @@ export class TermSession {
     this.gitCards = document.createElement("div");
     this.gitCards.className = "pane-status-git";
     this.statusBar.append(this.treeButton, this.gitCards);
-    this.pane.append(this.header, this.body, this.statusBar);
+    this.pane.append(this.header, this.body);
+    if (kind === "shell") this.pane.append(this.statusBar);
     host.appendChild(this.pane);
 
     close.addEventListener("click", (e) => {
@@ -176,6 +185,7 @@ export class TermSession {
     this.term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
     this.term.registerLinkProvider(fileLinkProvider(this.term, () => this.cwd || this.startCwd));
     this.term.loadAddon(this.searchAddon);
+    if (kind === "web") return;
     this.term.open(this.el);
     try {
       const webgl = new WebglAddon();
@@ -573,7 +583,7 @@ export class TermSession {
   }
 
   fit() {
-    if (this.disposed) return;
+    if (this.disposed || this.kind === "web") return;
     try {
       this.fitAddon.fit();
     } catch {
@@ -582,6 +592,7 @@ export class TermSession {
   }
 
   focus() {
+    reclaimFocus();
     this.term.focus();
   }
 
