@@ -190,7 +190,7 @@
   }
 }
 
-/* The lane's name and count, on a rule that points at the next lane. */
+/* The lane's name and count, on a plain rule. */
 .home-lane-head {
   display: flex;
   align-items: center;
@@ -212,22 +212,8 @@
 }
 .home-lane-rule {
   flex: 1;
-  display: flex;
-  align-items: center;
   min-width: 16px;
-  color: var(--faint);
-}
-.home-lane-rule::before {
-  content: "";
-  flex: 1;
   height: 1px;
-  background: var(--border);
-  background: linear-gradient(to right, var(--border), color-mix(in srgb, var(--text) 18%, transparent));
-}
-.home-lane-rule svg {
-  margin-left: -3px;
-}
-.home-lane[data-lane="pulls"] .home-lane-rule::before {
   background: var(--border);
 }
 
@@ -437,7 +423,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 6px;
+  gap: 8px;
   min-height: 32px;
   padding: 3px 3px 3px 10px;
   border-radius: 8px;
@@ -497,13 +483,13 @@
   font-weight: 600;
 }
 
-/* Active filters, each removable, at the start of the search field. */
-/* Its box steps aside so the chips wrap in line with the search text. */
+/* Active filters, each removable, along the top of the filter menu. */
 .home-chips {
-  display: contents;
-}
-.home-chips[hidden] {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid var(--border);
 }
 .home-chip {
   display: inline-flex;

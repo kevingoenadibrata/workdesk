@@ -107,7 +107,7 @@ Hand-made originals like **Ember**, **Glacier** and **Sakura Night**, plus the p
 <kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd> opens Home, a board that goes from ticket to merged PR in three lanes:
 
 - **Backlog.** Tickets assigned to you from **GitHub Issues**, **Linear** and **ClickUp**, with search and filters. Open one to read its description.
-- **With an agent.** Click **Hand to Claude** and Workdesk makes a git worktree for the ticket (in `~/.workdesk/worktrees/<repo>/<branch>`), opens a tab there and starts Claude Code on it. You can follow its status and recent output from the card. Toasts and macOS notifications tell you when it needs you or opens a PR.
+- **Agents.** Click **Hand to Claude** and Workdesk makes a git worktree for the ticket (in `~/.workdesk/worktrees/<repo>/<branch>`), opens a tab there and starts Claude Code on it. You can follow its status and recent output from the card. Toasts and macOS notifications tell you when it needs you or opens a PR.
 - **Pull requests.** Your open GitHub PRs. A ticket's run is tracked until its PR merges.
 
 Every coding agent running in your panes shows up here too: **Claude Code**, **Codex** and **opencode**, each with what it's doing and whether it's **waiting on you**. The header shows your **5-hour and weekly usage limits** for Claude and Codex, and a **local servers** button that opens a drawer listing every web server on your machine, whether or not you started it in Workdesk (<kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd>).
