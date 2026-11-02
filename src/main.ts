@@ -10,12 +10,29 @@ import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor } from "./monitor";
 import { LocalServers, serverUrl } from "./servers";
 import { ticketStore, type Ticket } from "./tickets";
-import { buildPrompt, rememberRepo, repoFor, runKey, runStore, runsApi, shellQuote, type Run } from "./runs";
-import { panesInOrder } from "./monitor";
+import {
+  SESSION_LABELS,
+  attachPrompt,
+  buildPrompt,
+  claudeResume,
+  claudeStart,
+  rememberRepo,
+  repoFor,
+  sessionLabel,
+  sessionStore,
+  sessionsApi,
+  ticketKey,
+  type Session,
+} from "./sessions";
+import { renderSessionBar, type SessionBarActions } from "./sessionbar";
+import { openTicketPicker } from "./ticketpicker";
+import { openBranchPicker } from "./branchpicker";
+import { showToast } from "./toast";
+import type { TermSession } from "./terminal";
 import { HomePage, HomeRow, liveHomeSource } from "./home";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Page } from "./page";
-import { Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
+import { GitMerge, GitPullRequest, GitPullRequestClosed, Keyboard, PanelLeftClose, PanelLeftOpen, Search, Settings as SettingsIcon, X, icon } from "./icons";
 import { kbdFor } from "./kbd";
 import { installSplitDrop } from "./splitdrop";
 import { LayoutPicker } from "./layouts";
@@ -23,7 +40,7 @@ import { installFileDrop } from "./filedrop";
 import { gitBranches, gitCheckout, gitStatus, processCwds } from "./pty";
 import { THEMES, loadTheme, setTheme } from "./themes";
 import { resetZoom, zoom } from "./fonts";
-import { keepSessionSaved, loadSession } from "./session";
+import { keepLayoutSaved, loadLayout } from "./layoutStore";
 import { addLoadout, cleanLoadoutName, findLoadout, onLoadoutsChange, usableLoadouts } from "./loadouts";
 import { installHoldHints, installShortcuts, type Action } from "./shortcuts";
 import { runnable } from "./macros";
@@ -53,11 +70,11 @@ const monitor = new AgentMonitor(ws);
 const servers = new LocalServers(ws);
 const homePage = new HomePage(
   $("#terminals"),
-  liveHomeSource(ticketStore, runStore, monitor, servers, {
-    handOver: startRun,
+  liveHomeSource(ticketStore, sessionStore, monitor, servers, {
+    handOver: handToClaude,
     startBranch: startTicketBranch,
-    openRun,
-    cleanup: cleanupRun,
+    openSession: recallSession,
+    endSession,
     jumpTo: (agent) => {
       ws.reveal(agent.session);
       Page.closeAll();
@@ -124,16 +141,25 @@ function pickRepo(ticket: Ticket): Promise<string | undefined> {
   });
 }
 
+// ---- sessions ----
+
+/** Opens a tab in `session`'s worktree running `command` (Claude), as that session's pane. */
+function openSessionPane(session: Session, command: string) {
+  Page.closeAll();
+  const tab = ws.newTab(undefined, session.path, [command]);
+  ws.setPaneSession(tab.session, session.id, sessionLabel(session));
+}
+
 /**
  * Hands `ticket` to Claude Code: makes a worktree for `branch` in the
- * ticket's repo (asked for once per project), then opens a tab there running
- * Claude with the ticket as its brief. Flow stays open, so the next ticket
- * can follow.
+ * ticket's repo (asked for once per project), then opens a session there
+ * with the ticket as Claude's brief. Home stays open, so the next ticket can
+ * follow. A ticket that already has a session picks that one back up.
  */
-async function startRun(ticket: Ticket, branch: string): Promise<string> {
-  const known = runStore.get(runKey(ticket));
+async function handToClaude(ticket: Ticket, branch: string): Promise<string> {
+  const known = sessionStore.forTicket(ticket);
   if (known) {
-    openRun(known);
+    recallSession(known);
     return "";
   }
   const remembered = repoFor(ticket);
@@ -141,57 +167,238 @@ async function startRun(ticket: Ticket, branch: string): Promise<string> {
   if (!dir) return "";
   let started;
   try {
-    started = await runsApi.start(dir, branch, buildPrompt(ticket, branch));
+    started = await sessionsApi.start(dir, branch, buildPrompt(ticket, branch));
   } catch (e) {
     // A bad pick shouldn't stick.
     if (/isn't in a git repo|bare repo/.test(String(e))) rememberRepo(ticket, undefined);
     throw e;
   }
   rememberRepo(ticket, dir);
-  const run: Run = {
-    key: runKey(ticket),
-    ticket: { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url },
+  const session = sessionFrom(started, branch, ticket.id, { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url });
+  sessionStore.add(session);
+  openSessionPane(session, claudeStart(session, true));
+  const extras = [started.base && `from ${started.base}`, started.copied.length && `copied ${started.copied.join(", ")}`].filter(Boolean);
+  return `${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}${extras.length ? ` (${extras.join("; ")})` : ""}`;
+}
+
+function sessionFrom(started: Awaited<ReturnType<typeof sessionsApi.start>>, branch: string, name: string, ticket: Session["ticket"]): Session {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    ticket,
     path: started.path,
     root: started.root,
     repo: started.repo,
     branch,
     promptFile: started.prompt_file,
-    sessionId: crypto.randomUUID(),
     startedAt: Date.now(),
     pull: null,
   };
-  runStore.add(run);
-  const claude = `claude --session-id ${run.sessionId} --name ${shellQuote(ticket.id)} --permission-mode auto "$(cat ${shellQuote(run.promptFile)})"`;
-  const tab = ws.newTab(undefined, run.path, [claude]);
-  ws.renameTab(tab.id, ticket.id);
-  const extras = [started.base && `from ${started.base}`, started.copied.length && `copied ${started.copied.join(", ")}`].filter(Boolean);
-  return `${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}${extras.length ? ` (${extras.join("; ")})` : ""}`;
 }
 
-/** The pane working in `run`'s worktree: the one running Claude, else any shell there. */
-function runPane(run: Run) {
-  const agent = runStore.agentFor(run);
-  if (agent) return agent.session;
-  const inside = (d: string) => d === run.path || d.startsWith(run.path + "/");
-  return panesInOrder(ws).find((p) => inside(p.session.cwd || p.session.startCwd))?.session;
+/**
+ * ⌘⇧N: a session with no ticket yet. Asks for the repo (Teleport, folders
+ * only), then the branch to work on (an existing one, or a new one named
+ * there), makes its worktree and starts Claude in it.
+ */
+function newSession() {
+  const title = document.createElement("span");
+  title.append("New session in which repo?");
+  void dirPicker.open(
+    (dir) => void nameSession(dir),
+    () => {
+      if (!Page.current) focusTerminal();
+    },
+    undefined,
+    { title, placeholder: "Pick the repo's folder…  (~/ or / to browse)", plain: true },
+  );
 }
 
-/** Goes to `run`'s tab, or picks its Claude session back up in a new one. */
-function openRun(run: Run) {
+async function nameSession(dir: string) {
+  const info = (await gitStatus([dir]).catch(() => null))?.[dir];
+  if (!info) {
+    showToast(`${dir} isn't in a git repo`, 5000);
+    return;
+  }
+  const branches = await gitBranches(dir).catch(() => [] as string[]);
+  const host = $("#terminals").getBoundingClientRect();
+  openBranchPicker(
+    $("#terminals"),
+    branches.filter((b) => b !== info.branch),
+    "",
+    ({ branch }) => void startSession(dir, branch),
+    () => {
+      if (!Page.current) focusTerminal();
+    },
+    { at: { x: host.left + host.width / 2, y: host.top + 72 }, placeholder: `Branch for the session in ${info.repo}…` },
+  );
+}
+
+async function startSession(dir: string, branch: string) {
+  try {
+    const started = await sessionsApi.start(dir, branch, "");
+    const session = sessionFrom(started, branch, branch, null);
+    sessionStore.add(session);
+    openSessionPane(session, claudeStart(session, false));
+    showToast(`${started.reused ? "Reused" : "Made"} a worktree for ${branch} in ${started.repo}`, 3000);
+  } catch (e) {
+    showToast(String(e), 6000);
+  }
+}
+
+/**
+ * Goes to `session`'s pane, or picks its Claude back up in a new one. A pane
+ * from before sessions existed that's running its Claude becomes its pane.
+ */
+function recallSession(session: Session) {
   Page.closeAll();
-  const pane = runPane(run);
-  if (pane) return ws.reveal(pane);
-  const tab = ws.newTab(undefined, run.path, [`claude --resume ${run.sessionId}`]);
-  ws.renameTab(tab.id, run.ticket.id);
+  const pane = ws.paneForSession(session.id) ?? sessionStore.agentFor(session)?.session;
+  if (!pane) return openSessionPane(session, claudeResume(session));
+  if (pane.sessionId !== session.id) ws.setPaneSession(pane, session.id, sessionLabel(session));
+  ws.reveal(pane);
 }
 
-async function cleanupRun(run: Run): Promise<string> {
-  if (runPane(run)) throw `Close the tab working in ${run.path} first.`;
-  const merged = run.pull?.state === "MERGED";
-  const msg = await runsApi.remove(run.path, run.root, run.branch, merged, run.promptFile);
-  runStore.delete(run.key);
+const tabOf = (pane: TermSession) => [...ws.tabs.values()].find((t) => t.sessions.includes(pane));
+
+/**
+ * Ends `session`: closes its pane (confirming if Claude's busy), removes its
+ * worktree, and its branch too once its PR is merged. Resolves "" if the
+ * pane was kept open.
+ */
+async function endSession(session: Session): Promise<string> {
+  const pane = ws.paneForSession(session.id);
+  const tab = pane && tabOf(pane);
+  if (pane && tab) {
+    await ws.requestClosePane(tab.id, pane);
+    if (ws.paneForSession(session.id)) return "";
+  }
+  const merged = session.pull?.state === "MERGED";
+  const msg = await sessionsApi.remove(session.path, session.root, session.branch, merged, session.promptFile);
+  sessionStore.delete(session.id);
   return msg;
 }
+
+/** Attaches `ticket` to `session`, renaming its pane after it. */
+function attachTicket(session: Session, ticket: Ticket) {
+  sessionStore.update(session.id, { ticket: { provider: ticket.provider, id: ticket.id, title: ticket.title, url: ticket.url } });
+  const pane = ws.paneForSession(session.id);
+  if (pane) ws.setPaneSession(pane, session.id, sessionLabel(session));
+  showToast(`Attached ${ticket.id}`, 5000, { label: "Send brief to Claude", run: () => sendBrief(session) });
+}
+
+/** Types the session's ticket into its Claude's prompt, for you to send. */
+function sendBrief(session: Session) {
+  const t = session.ticket;
+  const pane = ws.paneForSession(session.id);
+  if (!t) return;
+  if (!pane) {
+    showToast(`Open ${sessionLabel(session)} first`, 3000);
+    return;
+  }
+  const full = ticketStore.tickets.find((x) => ticketKey(x) === ticketKey(t));
+  const ticket: Ticket = full ?? { ...t, project: "", status: "", color: null, updated: "", branch: null };
+  ws.reveal(pane);
+  pane.term.paste(attachPrompt(ticket, session.branch));
+  pane.focus();
+  showToast("Brief typed into Claude's prompt. Press Enter to send it.", 3000);
+}
+
+const sessionBarActions: SessionBarActions = {
+  reveal: (s) => void revealItemInDir(s.path),
+  copyPath: (s) => void navigator.clipboard.writeText(s.path).then(() => showToast("Copied the worktree's path")),
+  end: (s) =>
+    void endSession(s).then(
+      (msg) => msg && showToast(msg, 4000),
+      (e) => showToast(String(e), 6000),
+    ),
+  pickTicket: (s, anchor) =>
+    openTicketPicker(
+      anchor,
+      ticketStore.tickets,
+      (t) => {
+        const holder = sessionStore.forTicket(t);
+        return holder && holder.id !== s.id ? sessionLabel(holder) : undefined;
+      },
+      (t) => attachTicket(s, t),
+      ticketStore.connected.length ? "No tickets assigned to you" : "Connect GitHub, Linear or ClickUp in Settings first",
+    ),
+  detachTicket: (s) => {
+    sessionStore.update(s.id, { ticket: null });
+    const pane = ws.paneForSession(s.id);
+    if (pane) ws.setPaneSession(pane, s.id, sessionLabel(s));
+  },
+  sendBrief,
+  openUrl: (url) => void openUrl(url),
+};
+
+/** Redraws every pane's header: a session's bar, or a plain shell's title. */
+function refreshSessionBars() {
+  for (const pane of ws.allSessions) {
+    const session = pane.sessionId ? sessionStore.get(pane.sessionId) : undefined;
+    // Its session was ended elsewhere: it's just a shell now.
+    if (pane.sessionId && !session) pane.sessionId = pane.sessionName = undefined;
+    renderSessionBar(pane, session ?? null, session ? sessionStore.state(session) : "stopped", sessionBarActions);
+  }
+}
+ws.onChange(refreshSessionBars);
+sessionStore.onChange(() => {
+  adoptSessionPanes();
+  refreshSessionBars();
+  sidebar.render();
+});
+
+/**
+ * A closed session whose Claude is running in some pane after all (one
+ * started by hand in its worktree, or from before sessions existed) makes
+ * that pane its own.
+ */
+function adoptSessionPanes() {
+  for (const s of sessionStore.all) {
+    const pane = sessionStore.agentFor(s)?.session;
+    if (pane && !pane.sessionId && !ws.paneForSession(s.id)) ws.setPaneSession(pane, s.id, sessionLabel(s));
+  }
+}
+
+/** Forgets sessions whose worktree was deleted outside Workdesk. */
+async function pruneSessions() {
+  const all = sessionStore.all;
+  const existing = new Set(await invoke<string[]>("existing_dirs", { paths: all.map((s) => s.path) }).catch(() => all.map((s) => s.path)));
+  for (const s of all) if (!existing.has(s.path)) sessionStore.delete(s.id);
+}
+
+// A tab with a session that has a PR shows its number in the sidebar.
+sidebar.badge = (tab) => {
+  const pull = tab.sessions.map((p) => (p.sessionId ? sessionStore.get(p.sessionId)?.pull : null)).find(Boolean);
+  if (!pull) return null;
+  const badge = document.createElement("span");
+  badge.className = "tab-badge";
+  badge.dataset.state = pull.state;
+  badge.title = `#${pull.number} · ${pull.title}`;
+  badge.append(icon(pull.state === "MERGED" ? GitMerge : pull.state === "CLOSED" ? GitPullRequestClosed : GitPullRequest, 11), `${pull.number}`);
+  return badge;
+};
+
+dirPicker.sessions = {
+  list: () =>
+    sessionStore.all.map((s) => {
+      const state = sessionStore.state(s);
+      return {
+        id: s.id,
+        label: sessionLabel(s),
+        detail: [s.ticket?.title, `${s.repo} · ${s.branch}`].filter(Boolean).join(" · "),
+        status: SESSION_LABELS[state] + (s.pull && (state === "pr" || state === "merged") ? ` #${s.pull.number}` : ""),
+        open: !!ws.paneForSession(s.id),
+      };
+    }),
+  recall: (id) => {
+    const s = sessionStore.get(id);
+    if (s) recallSession(s);
+  },
+  end: (id) => {
+    const s = sessionStore.get(id);
+    return s ? endSession(s) : Promise.resolve("");
+  },
+};
 
 installSplitDrop($("#terminals"), ws, () => sidebar.draggingTabIds);
 installFileDrop(ws);
@@ -457,6 +664,7 @@ $("#tablist").addEventListener(
 const handlers: Record<Action, () => void> = {
   newTab: () => void newTab(),
   newTabIn,
+  newSession,
   openHome: () => homePage.toggle(),
   openSettings: () => settings.toggle(),
   openShortcuts: () => shortcutsPage.toggle(),
@@ -508,6 +716,7 @@ const PAGE_SAFE = new Set<Action>([
   "toggleSidebar",
   "collapseSidebar",
   "newTabIn",
+  "newSession",
   "searchTabs",
   "zoomIn",
   "zoomOut",
@@ -592,14 +801,20 @@ try {
 setSidebarCollapsed(startCollapsed);
 
 // Reopen last time's tabs, splits and groups, or start with one tab.
-const saved = loadSession();
-if (!saved || !ws.restore(saved)) ws.newTab();
-keepSessionSaved(ws);
+// Panes that were sessions pick their Claude back up.
+const saved = loadLayout();
+const resume = (id: string) => {
+  const s = sessionStore.get(id);
+  return s ? { cwd: s.path, commands: [claudeResume(s)], name: sessionLabel(s) } : null;
+};
+if (!saved || !ws.restore(saved, resume)) ws.newTab();
+keepLayoutSaved(ws);
 applyAppIcon();
 ws.startTitlePolling();
 ws.startGitPolling();
 monitor.start();
-runStore.start((fn) => monitor.onChange(fn));
+sessionStore.start((fn) => monitor.onChange(fn));
+void pruneSessions();
 servers.start();
 ticketStore.start();
 // Start on Home; last time's tabs are restored behind it.

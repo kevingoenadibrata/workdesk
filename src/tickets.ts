@@ -24,7 +24,7 @@ import {
 } from "./icons";
 import { showToast } from "./toast";
 import { providerLogo, type Provider } from "./providerLogos";
-import { RUN_LABELS, runKey, type Run, type RunStore } from "./runs";
+import { SESSION_LABELS, type Session, type SessionStore } from "./sessions";
 
 export type { Provider };
 
@@ -304,15 +304,15 @@ export const ticketStore = new TicketStore();
 
 // ---- the page ----
 
-/** Handing tickets to Claude in their own worktrees (see runs.ts). */
+/** Handing tickets to Claude in their own worktrees (see sessions.ts). */
 export interface RunHooks {
-  store: RunStore;
+  store: SessionStore;
   /** Asks which repo if it doesn't know, then makes the worktree and starts Claude in a new tab. Resolves "" if cancelled. */
   start(ticket: Ticket, branch: string): Promise<string>;
-  /** Goes to the run's tab, resuming Claude in a new one if it's gone. */
-  open(run: Run): void;
+  /** Goes to the session's tab, resuming Claude in a new one if it's gone. */
+  open(session: Session): void;
   /** Removes the worktree (and the branch, once merged). */
-  cleanup(run: Run): Promise<string>;
+  cleanup(session: Session): Promise<string>;
 }
 
 type SortKey = "source" | "id" | "title" | "project" | "status" | "updated";
@@ -836,7 +836,7 @@ export class TicketsPage extends Page {
     const branch = branchName(t);
     const report = (p: Promise<string>) => p.then((msg) => msg && this.showFlash(msg), (e) => this.showFlash(String(e), true));
     const hooks = this.runs;
-    const run = hooks?.store.get(runKey(t));
+    const run = hooks?.store.forTicket(t);
     const title = el("div", "ticket-title");
     title.append(open);
     if (hooks && run) {
@@ -844,7 +844,7 @@ export class TicketsPage extends Page {
       const chip = el("button", "ticket-run");
       chip.dataset.state = state;
       const pr = run.pull ? ` #${run.pull.number}` : "";
-      chip.append(el("span", "ticket-status-dot"), RUN_LABELS[state] + (state === "pr" || state === "merged" ? pr : ""));
+      chip.append(el("span", "ticket-status-dot"), SESSION_LABELS[state] + (state === "pr" || state === "merged" ? pr : ""));
       chip.title = state === "pr" || state === "merged" || state === "closed" ? `Open pull request${pr}` : "Go to Claude's tab";
       chip.addEventListener("click", () => (run.pull && !hooks.store.agentFor(run) ? this.open_(run.pull.url) : hooks.open(run)));
       title.append(chip);

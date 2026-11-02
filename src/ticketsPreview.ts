@@ -4,7 +4,7 @@
 // ?error=1 a rejected token.
 import "./styles.css";
 import { TicketsPage, ticketStore, type PullRequest, type Ticket } from "./tickets";
-import { RunStore, type Run } from "./runs";
+import { SessionStore, type Session } from "./sessions";
 import type { Agent } from "./monitor";
 import { Settings } from "./settings";
 import { THEMES, currentTheme, loadTheme, setTheme } from "./themes";
@@ -80,17 +80,17 @@ if (click) setTimeout(() => document.querySelectorAll<HTMLElement>(click)[Number
 
 loadTheme();
 // Tickets Claude is working on: ?runs=0 hides them.
-const runs = new RunStore(() => {}, false);
+const runs = new SessionStore(() => {}, false);
 if (params.get("runs") !== "0") {
-  const run = (provider: Ticket["provider"], id: string, pull: Run["pull"] = null): Run => ({
-    key: `${provider}:${id}`,
+  const run = (provider: Ticket["provider"], id: string, pull: Session["pull"] = null): Session => ({
+    id: `${provider}:${id}`,
+    name: id,
     ticket: { provider, id, title: "", url: "" },
     path: `/Users/me/.workdesk/worktrees/app/${id}`,
     root: "/Users/me/app",
     repo: "app",
     branch: id.toLowerCase(),
     promptFile: "",
-    sessionId: "",
     startedAt: Date.now(),
     pull,
   });
@@ -102,7 +102,7 @@ if (params.get("runs") !== "0") {
     run("github", "#57"),
   ];
   for (const r of mocks) runs.add(r);
-  const agent = (r: Run, status: Agent["status"]) => ({ harness: "claude", status, session: { cwd: r.path, startCwd: r.path } }) as unknown as Agent;
+  const agent = (r: Session, status: Agent["status"]) => ({ harness: "claude", status, session: { cwd: r.path, startCwd: r.path } }) as unknown as Agent;
   runs.setAgents([agent(mocks[0], "working"), agent(mocks[1], "waiting")]);
 }
 
@@ -122,7 +122,7 @@ if (params.get("settings")) {
     {
       store: runs,
       start: async (t, branch) => `Made a worktree for ${branch} in workdesk (from origin/main) for ${t.id}`,
-      open: (run) => console.log("open run", run.key),
+      open: (s) => console.log("open session", s.id),
       cleanup: async (run) => `Removed the worktree and ${run.branch}`,
     },
   ).open();

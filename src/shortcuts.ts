@@ -12,6 +12,7 @@ export function isModClick(e: MouseEvent): boolean {
 export type Action =
   | "newTab"
   | "newTabIn"
+  | "newSession"
   | "openHome"
   | "openSettings"
   | "openShortcuts"
@@ -54,6 +55,7 @@ export type Action =
 export const DEFAULT_KEYMAP: Record<string, Action> = {
   "mod+t": "newTab",
   "mod+shift+t": "newTabIn",
+  "mod+shift+n": "newSession",
   "mod+shift+h": "openHome",
   "mod+,": "openSettings",
   "mod+/": "openShortcuts",
@@ -97,7 +99,8 @@ export const SHORTCUT_SECTIONS: { title: string; actions: [Action, string][] }[]
     title: "Tabs",
     actions: [
       ["newTab", "New tab in the current folder"],
-      ["newTabIn", "Teleport to another folder"],
+      ["newTabIn", "Teleport to a session or folder"],
+      ["newSession", "New Claude session in its own worktree"],
       ["closeTab", "Close pane or tab"],
       ["renameTab", "Rename tab"],
       ["searchTabs", "Search tabs"],

@@ -193,6 +193,8 @@ export interface SavedTab {
   title?: string;
   color?: GroupColor;
   columns: string[][];
+  /** The session each pane is (null for a plain shell), laid out like `columns`. */
+  sessions?: (string | null)[][];
   /** Each column's share of the width, then each pane's share of its column's height. */
   sizes?: { cols: number[]; rows: number[][] };
   /** Column and row of the focused pane. */
@@ -207,7 +209,7 @@ export interface SavedGroup {
 }
 
 /** Everything needed to reopen the same tabs, splits and groups (shells start fresh). */
-export interface SavedSession {
+export interface SavedLayout {
   /** The sidebar's top level in order: ungrouped tabs and groups, mixed. */
   items: (SavedTab | SavedGroup)[];
   /** Position of the active tab in sidebar order. */
@@ -272,7 +274,7 @@ export class Workspace {
   }
 
   private emit() {
-    for (const tab of this.tabs.values()) if (tab.sessions.length > 1) for (const s of tab.sessions) s.updateHeader();
+    for (const tab of this.tabs.values()) for (const s of tab.sessions) s.updateHeader();
     for (const fn of this.listeners) fn();
   }
 
@@ -551,6 +553,18 @@ export class Workspace {
     const tab = this.tabs.get(tabId);
     if (!tab || !tab.sessions.includes(session)) return;
     if (await confirmClose([session], tab.sessions.length === 1 ? "this tab" : "this pane")) this.closePane(tabId, session);
+  }
+
+  /** Makes `pane` the session `id` (named `name`), or a plain shell again with no `id`. */
+  setPaneSession(pane: TermSession, id?: string, name?: string) {
+    pane.sessionId = id;
+    pane.sessionName = id ? name : undefined;
+    this.emit();
+  }
+
+  /** The pane that is session `id`, if it's open. */
+  paneForSession(id: string): TermSession | undefined {
+    return this.allSessions.find((s) => s.sessionId === id);
   }
 
   /** Takes a pane out of a split tab's grid, leaving its shell running. */
@@ -1016,7 +1030,7 @@ export class Workspace {
 
   // ---- saving and restoring ----
 
-  snapshot(): SavedSession {
+  snapshot(): SavedLayout {
     const saveTab = (id: number): SavedTab => {
       const tab = this.tabs.get(id)!;
       const { col, row } = tab.find(tab.focused);
@@ -1024,6 +1038,7 @@ export class Workspace {
         title: tab.customTitle,
         color: tab.color,
         columns: tab.columns.map((c) => c.map((s) => s.cwd || s.startCwd)),
+        sessions: tab.columns.map((c) => c.map((s) => s.sessionId ?? null)),
         sizes: { cols: tab.columns.map((c) => c[0].colWeight), rows: tab.columns.map((c) => c.map((s) => s.rowWeight)) },
         focus: [col, row],
       };
@@ -1041,7 +1056,7 @@ export class Workspace {
    * activating it. Returns its id, or null if the grid was empty.
    */
   private openGrid(
-    panes: { cwd?: string; commands?: string[]; macro?: string }[][],
+    panes: { cwd?: string; commands?: string[]; macro?: string; sessionId?: string; sessionName?: string }[][],
     list: Entry[],
     opts: { focus?: [number, number]; title?: string; color?: GroupColor; sizes?: SavedTab["sizes"] } = {},
   ): number | null {
@@ -1049,7 +1064,14 @@ export class Workspace {
     if (columns.length === 0) return null;
     const tab = new Tab(this.nextTabId++);
     this.termHost.append(tab.el);
-    tab.columns = columns.map((c) => c.map(() => this.createPane(tab)));
+    tab.columns = columns.map((c) =>
+      c.map((p) => {
+        const pane = this.createPane(tab);
+        pane.sessionId = p.sessionId;
+        pane.sessionName = p.sessionId ? p.sessionName : undefined;
+        return pane;
+      }),
+    );
     const [col, row] = opts.focus ?? [0, 0];
     tab.focused = tab.columns[col]?.[row] ?? tab.columns[0][0];
     tab.customTitle = opts.title || undefined;
@@ -1079,11 +1101,19 @@ export class Workspace {
     };
   }
 
-  /** Reopens a saved session's tabs, each pane in a new shell in its old folder. False if it had no tabs. */
-  restore(saved: SavedSession): boolean {
+  /**
+   * Reopens a saved layout's tabs, each pane in a new shell in its old folder.
+   * A pane that was a session asks `resume` how to pick it back up, and is a
+   * plain shell if that says it's gone. False if there were no tabs.
+   */
+  restore(saved: SavedLayout, resume: (sessionId: string) => { cwd: string; commands: string[]; name: string } | null = () => null): boolean {
+    const pane = (cwd: string, id: string | null | undefined) => {
+      const r = id ? resume(id) : null;
+      return r ? { cwd: r.cwd, commands: r.commands, sessionId: id!, sessionName: r.name } : { cwd };
+    };
     const openTab = (t: SavedTab, list: Entry[]) =>
       this.openGrid(
-        t.columns.map((c) => c.map((cwd) => ({ cwd }))),
+        t.columns.map((c, i) => c.map((cwd, j) => pane(cwd, t.sessions?.[i]?.[j]))),
         list,
         { focus: t.focus, title: t.title, color: t.color, sizes: t.sizes },
       );

@@ -1,5 +1,6 @@
-import type { SavedGroup, SavedSession, SavedTab, Workspace } from "./workspace";
+import type { SavedGroup, SavedLayout, SavedTab, Workspace } from "./workspace";
 
+/** Kept from when layouts were called sessions, so the saved one still loads. */
 const KEY = "workdesk.session";
 const SAVE_DELAY_MS = 500;
 
@@ -13,12 +14,12 @@ function validTab(t: unknown): t is SavedTab {
   );
 }
 
-/** The session saved when the app last ran, or null if there's none (or it can't be read). */
-export function loadSession(): SavedSession | null {
+/** The layout saved when the app last ran, or null if there's none (or it can't be read). */
+export function loadLayout(): SavedLayout | null {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
     if (!raw) return null;
-    // Sessions saved before groups could sit between tabs listed ungrouped tabs, then groups.
+    // Layouts saved before groups could sit between tabs listed ungrouped tabs, then groups.
     const list: unknown[] = Array.isArray(raw.items)
       ? raw.items
       : Array.isArray(raw.ungrouped) && Array.isArray(raw.groups)
@@ -39,7 +40,7 @@ export function loadSession(): SavedSession | null {
  * Saves the workspace's tabs, splits and groups whenever they change (a shell
  * changing folder counts), so the next launch reopens them.
  */
-export function keepSessionSaved(ws: Workspace) {
+export function keepLayoutSaved(ws: Workspace) {
   let timer: number | undefined;
   const save = () => {
     clearTimeout(timer);
