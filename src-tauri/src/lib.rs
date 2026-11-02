@@ -26,8 +26,8 @@ const QUIT: &str = "quit";
 const CLOSE_WINDOW: &str = "close-window";
 
 /// Minimal menu: the default one binds ⌘W to "Close Window", which we want
-/// for closing tabs instead. Copy/Paste stay so the webview receives native
-/// clipboard events. The Loadouts menu lists `loadouts` by name.
+/// for closing tabs instead. Cut/Copy/Paste stay so the webview receives native
+/// clipboard events (without a menu item, macOS never sends the webview ⌘X). The Loadouts menu lists `loadouts` by name.
 fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Result<Menu<R>> {
     let app_menu = Submenu::with_items(
         h,
@@ -48,7 +48,11 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         h,
         "Edit",
         true,
-        &[&PredefinedMenuItem::copy(h, None)?, &PredefinedMenuItem::paste(h, None)?],
+        &[
+            &PredefinedMenuItem::cut(h, None)?,
+            &PredefinedMenuItem::copy(h, None)?,
+            &PredefinedMenuItem::paste(h, None)?,
+        ],
     )?;
     let loadout_menu = Submenu::new(h, "Loadouts", true)?;
     if loadouts.is_empty() {
