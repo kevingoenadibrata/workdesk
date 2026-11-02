@@ -200,13 +200,15 @@ export class HomePage extends Page {
   private query = "";
   /** The backlog page showing, from 0. */
   private page = 0;
+  /** Backlog tickets picked to hand to Claude together, by ticket key. */
+  private selected = new Map<string, Ticket>();
   private closeMenu: (() => void) | null = null;
   /** Built cards by key, with the signature they were built from. */
   private cards = new Map<string, { sig: string; el: HTMLElement }>();
   /** The page's scroller. */
   private scroller: HTMLElement | null = null;
   /** What the filter button, chips and errors last showed, so they're only redrawn when that changes. */
-  private shown = { filter: "", chips: "", errors: "" };
+  private shown = { filter: "", chips: "", errors: "", selection: "" };
   private els: {
     backlogCount: HTMLElement;
     agentCount: HTMLElement;
@@ -216,6 +218,7 @@ export class HomePage extends Page {
     reload: HTMLButtonElement;
     chips: HTMLElement;
     errors: HTMLElement;
+    selection: HTMLElement;
     backlog: HTMLElement;
     pager: HTMLElement;
     agents: HTMLElement;
@@ -237,12 +240,6 @@ export class HomePage extends Page {
     this.source.refresh();
   }
 
-  /** Opens Home with the new-ticket modal up (the notch's "Ticket" button). */
-  compose() {
-    if (!this.isOpen) this.open();
-    this.openComposer(undefined, null);
-  }
-
   close() {
     clearTimeout(this.clockTimer);
     this.clock = null;
@@ -251,6 +248,7 @@ export class HomePage extends Page {
     this.closeDrawer?.(false);
     this.cards.clear();
     this.looseCards.clear();
+    this.selected.clear();
     this.els = null;
     super.close();
   }
@@ -327,15 +325,19 @@ export class HomePage extends Page {
     const write = el("button", "home-write");
     write.title = "Write a ticket in Workdesk, GitHub or ClickUp";
     write.setAttribute("aria-label", "New ticket");
-    write.append(icon(Plus, 14), "New");
+    const writeHint = el("span", "hold-hint");
+    writeHint.append(kbdFor("newTicket"));
+    write.append(icon(Plus, 14), "New", writeHint);
     write.addEventListener("click", () => this.openComposer());
     tools.append(search, filter, reload, write);
     const chips = el("div", "home-chips");
     const errors = el("div", "home-errors");
+    const selection = el("div", "home-selection");
+    selection.hidden = true;
     const backlogList = el("div", "home-list");
     const pager = el("div", "home-pager");
     pager.hidden = true;
-    backlog.section.append(tools, chips, errors, backlogList, pager);
+    backlog.section.append(tools, chips, errors, selection, backlogList, pager);
     const agentBox = el("div", "home-lane-body");
     agents.section.append(agentBox);
     const pullBox = el("div", "home-lane-body");
@@ -347,7 +349,7 @@ export class HomePage extends Page {
     root.append(head, empty, lanes);
     body.append(root);
     this.scroller = body.parentElement;
-    this.shown = { filter: "", chips: "", errors: "" };
+    this.shown = { filter: "", chips: "", errors: "", selection: "" };
 
     this.els = {
       backlogCount: backlog.count,
@@ -358,6 +360,7 @@ export class HomePage extends Page {
       reload,
       chips,
       errors,
+      selection,
       backlog: backlogList,
       pager,
       agents: agentBox,
@@ -537,6 +540,15 @@ export class HomePage extends Page {
     this.openDrawer();
   }
 
+  /** Opens Home with the New ticket composer showing; again, leaves the open composer be. */
+  newTicket() {
+    if (!this.isOpen) this.open();
+    const open = document.querySelector<HTMLElement>(".home-compose");
+    if (open) return open.querySelector<HTMLElement>(".home-compose-title")?.focus();
+    this.closeDrawer?.(false);
+    this.openComposer();
+  }
+
   /** The servers' cards, in a panel sliding in from the right. */
   private openDrawer() {
     if (this.closeDrawer) return this.closeDrawer();
@@ -698,6 +710,10 @@ export class HomePage extends Page {
     const e = this.els!;
     const { connected, loading } = this.source.tickets();
     const all = this.backlogTickets();
+    // A ticket that's left the backlog (it's with an agent now, or gone) can't stay picked.
+    const inBacklog = new Set(all.map(ticketKey));
+    for (const key of this.selected.keys()) if (!inBacklog.has(key)) this.selected.delete(key);
+    this.renderSelection();
     const n = this.activeCount();
     this.renderPager(0);
     if (!connected && !all.length) return sync(e.backlog, [this.empty("No tickets yet", "Write one with New ticket, or connect a service above.")]);
@@ -710,12 +726,17 @@ export class HomePage extends Page {
     // A page can empty out as tickets move along; step back to the last one.
     const pages = Math.max(1, Math.ceil(matching.length / PAGE_SIZE));
     this.page = Math.min(this.page, pages - 1);
+    this.renderSelection();
     const shown = matching.slice(this.page * PAGE_SIZE, (this.page + 1) * PAGE_SIZE);
     this.renderPager(matching.length);
     const now = Date.now();
-    const cards = shown.map((t) =>
-      this.card(`ticket:${ticketKey(t)}`, `${t.title}\0${t.status}\0${t.color}\0${t.project}\0${ago(updatedAt(t), now)}`, () => this.backlogCard(t)),
-    );
+    const cards = shown.map((t) => {
+      const card = this.card(`ticket:${ticketKey(t)}`, `${t.title}\0${t.status}\0${t.color}\0${t.project}\0${ago(updatedAt(t), now)}`, () => this.backlogCard(t));
+      this.markSelected(card, this.selected.has(ticketKey(t)));
+      return card;
+    });
+    const picking = this.selected.size > 0;
+    if (e.backlog.classList.contains("picking") !== picking) e.backlog.classList.toggle("picking", picking);
     if (!cards.length) {
       const none = el("div", "home-empty");
       none.append(el("strong", "", "No matches"), el("span", "", "Nothing in the backlog matches your search and filters."));
@@ -762,17 +783,45 @@ export class HomePage extends Page {
     card.tabIndex = 0;
     card.setAttribute("role", "button");
     card.title = `${t.id} · ${t.title}`;
-    // Everything you can do with a ticket is in its details.
+    // Everything you can do with a ticket is in its details. ⌘- or
+    // ⇧-click picks it instead, and once any are picked a click picks too.
     const open = () => this.openTicket(t);
-    card.addEventListener("click", open);
+    const toggle = () => this.toggleSelected(t);
+    card.addEventListener("click", (e) => {
+      if (e.metaKey || e.shiftKey || this.selected.size) toggle();
+      else open();
+    });
     card.addEventListener("keydown", (e) => {
-      if ((e.key === "Enter" || e.key === " ") && e.target === card) {
+      if (e.target !== card) return;
+      if (e.key === "Escape" && this.selected.size) {
+        // Unpicks them all, rather than closing Home.
         e.preventDefault();
-        open();
+        e.stopPropagation();
+        this.clearSelected();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (e.metaKey || e.shiftKey) toggle();
+        else open();
+      } else if (e.key === " ") {
+        e.preventDefault();
+        if (this.selected.size) toggle();
+        else open();
       }
     });
+    // The stub turns into a checkbox on hover, and stays one while any are picked.
     const stub = el("div", "home-stub");
     stub.innerHTML = logo(t.provider, 15);
+    const check = el("span", "home-check");
+    check.setAttribute("role", "checkbox");
+    check.setAttribute("aria-checked", "false");
+    check.setAttribute("aria-label", `Pick ${t.id}`);
+    check.title = "Pick to hand to Claude with others (⌘-click a card)";
+    check.append(icon(Check, 12));
+    check.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggle();
+    });
+    stub.append(check);
     const body = el("div", "home-body");
     const line = el("div", "home-line");
     // The title gets the room; the ID is in the tooltip and the details.
@@ -882,8 +931,7 @@ export class HomePage extends Page {
     });
     hand.addEventListener("click", () => {
       close(false);
-      const card = this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(t)}`)}"]`);
-      if (card) this.handOver(t, card);
+      void this.handOver(t, this.backlogCardFor(t));
     });
     hand.focus();
   }
@@ -1112,25 +1160,116 @@ export class HomePage extends Page {
     title.focus();
   }
 
-  /** Hands `t` to Claude; once its session shows up, the card flies over to the agent lane. */
-  private handOver(t: Ticket, card: HTMLElement) {
-    const from = card.getBoundingClientRect();
-    card.classList.add("busy");
-    void this.source.handOver(t, branchName(t)).then(
+  // ---- picking several tickets ----
+
+  private markSelected(card: HTMLElement, on: boolean) {
+    if (card.classList.contains("selected") === on) return;
+    card.classList.toggle("selected", on);
+    card.querySelector(".home-check")?.setAttribute("aria-checked", String(on));
+  }
+
+  private toggleSelected(t: Ticket) {
+    const key = ticketKey(t);
+    if (this.selected.has(key)) this.selected.delete(key);
+    else this.selected.set(key, t);
+    this.renderBacklogList();
+  }
+
+  private clearSelected() {
+    if (!this.selected.size) return;
+    this.selected.clear();
+    this.renderBacklogList();
+  }
+
+  /** The bar over the backlog while tickets are picked: how many, pick the page or none, and hand them all to Claude. */
+  private renderSelection() {
+    const box = this.els!.selection;
+    const n = this.selected.size;
+    const pageKeys = this.pageTickets().map(ticketKey);
+    const pageAll = pageKeys.length > 0 && pageKeys.every((k) => this.selected.has(k));
+    const key = n ? `${n}/${pageAll}` : "";
+    if (this.shown.selection === key) return;
+    this.shown.selection = key;
+    box.hidden = !n;
+    if (!n) return box.replaceChildren();
+    const count = el("span", "home-selection-count", `${n} picked`);
+    const all = el("button", "home-selection-button", pageAll ? "Unpick page" : "Pick page");
+    all.title = pageAll ? "Unpick the tickets on this page" : "Pick every ticket on this page";
+    all.addEventListener("click", () => {
+      for (const t of this.pageTickets()) {
+        if (pageAll) this.selected.delete(ticketKey(t));
+        else this.selected.set(ticketKey(t), t);
+      }
+      this.renderBacklogList();
+    });
+    const none = el("button", "home-selection-button", "Clear");
+    none.title = "Unpick every ticket";
+    none.addEventListener("click", () => this.clearSelected());
+    const hand = el("button", "home-hand");
+    hand.append(icon(Bot, 14), n === 1 ? "Hand to Claude" : `Hand ${n} to Claude`);
+    hand.title = n === 1 ? "Make a worktree and start a Claude session on the picked ticket" : `Make a worktree and start a Claude session for each of the ${n} picked tickets`;
+    hand.addEventListener("click", () => void this.handOverPicked());
+    const tools = el("div", "home-selection-tools");
+    tools.append(all, none, hand);
+    box.replaceChildren(count, tools);
+  }
+
+  /** The tickets on the backlog page showing. */
+  private pageTickets(): Ticket[] {
+    return this.matching().slice(this.page * PAGE_SIZE, (this.page + 1) * PAGE_SIZE);
+  }
+
+  /**
+   * Hands every picked ticket to Claude, one after another, each in its own
+   * session. Dismissing a repo picker stops the rest; a ticket that fails is
+   * reported with its own Try again, and the others carry on.
+   */
+  private async handOverPicked() {
+    const picked = [...this.selected.values()];
+    this.selected.clear();
+    this.renderBacklogList();
+    let started = 0;
+    for (const [i, t] of picked.entries()) {
+      const outcome = await this.handOver(t, this.backlogCardFor(t), picked.length > 1);
+      if (outcome === "cancelled") {
+        const left = picked.length - i - 1;
+        if (left) showToast(`Stopped: ${left} ticket${left === 1 ? "" : "s"} not handed over`, 4000);
+        break;
+      }
+      if (outcome === "started") started++;
+    }
+    if (picked.length > 1 && started) showToast(`Started ${started} Claude session${started === 1 ? "" : "s"}`, 3500);
+  }
+
+  private backlogCardFor(t: Ticket): HTMLElement | null {
+    return this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(t)}`)}"]`) ?? null;
+  }
+
+  /**
+   * Hands `t` to Claude; once its session shows up, the card (if it's showing)
+   * flies over to the agent lane. `quiet` leaves the success message to the
+   * batch it's part of.
+   */
+  private handOver(t: Ticket, card: HTMLElement | null, quiet = false): Promise<"started" | "cancelled" | "failed"> {
+    const from = card?.getBoundingClientRect();
+    card?.classList.add("busy");
+    return this.source.handOver(t, branchName(t)).then(
       (msg) => {
-        card.classList.remove("busy");
-        if (!msg) return;
-        this.showFlash(msg);
+        card?.classList.remove("busy");
+        if (!msg) return "cancelled";
+        if (!quiet) this.showFlash(msg);
         this.render();
         const session = this.source.sessions().find((s) => s.ticket && ticketKey(s.ticket) === ticketKey(t));
         const landed = session && this.els?.agents.querySelector<HTMLElement>(`[data-key="${CSS.escape(`session:${session.id}`)}"]`);
-        if (landed) this.fly(card, from, landed);
+        if (card && from && landed) this.fly(card, from, landed);
+        return "started";
       },
       (e) => {
-        card.classList.remove("busy");
+        card?.classList.remove("busy");
         // Try again from the ticket's card as it is by then.
-        const retry = () => this.handOver(t, this.els?.backlog.querySelector<HTMLElement>(`[data-key="${CSS.escape(`ticket:${ticketKey(t)}`)}"]`) ?? card);
-        this.showFlash(String(e), true, this.actionFixes(String(e), retry));
+        const retry = () => void this.handOver(t, this.backlogCardFor(t) ?? card);
+        this.showFlash(quiet ? `${t.id}: ${e}` : String(e), true, this.actionFixes(String(e), retry));
+        return "failed";
       },
     );
   }

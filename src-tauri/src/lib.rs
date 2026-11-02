@@ -1,5 +1,6 @@
 mod agents;
 mod appicon;
+mod browser;
 mod dirs;
 mod files;
 mod git;
@@ -27,8 +28,8 @@ const QUIT: &str = "quit";
 const CLOSE_WINDOW: &str = "close-window";
 
 /// Minimal menu: the default one binds ⌘W to "Close Window", which we want
-/// for closing tabs instead. Copy/Paste stay so the webview receives native
-/// clipboard events. The Loadouts menu lists `loadouts` by name.
+/// for closing tabs instead. Cut/Copy/Paste stay so the webview receives native
+/// clipboard events (without a menu item, macOS never sends the webview ⌘X). The Loadouts menu lists `loadouts` by name.
 fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Result<Menu<R>> {
     let app_menu = Submenu::with_items(
         h,
@@ -49,7 +50,11 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         h,
         "Edit",
         true,
-        &[&PredefinedMenuItem::copy(h, None)?, &PredefinedMenuItem::paste(h, None)?],
+        &[
+            &PredefinedMenuItem::cut(h, None)?,
+            &PredefinedMenuItem::copy(h, None)?,
+            &PredefinedMenuItem::paste(h, None)?,
+        ],
     )?;
     let loadout_menu = Submenu::new(h, "Loadouts", true)?;
     if loadouts.is_empty() {
@@ -102,6 +107,7 @@ pub fn run() {
         .manage(agents::AgentState::default())
         .manage(servers::ServerState::default())
         .manage(notch::NotchState::default())
+        .manage(browser::BrowserState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
             if let Err(e) = notch::open(app.handle()) {
@@ -130,6 +136,15 @@ pub fn run() {
             quit_app,
             close_main_window,
             appicon::set_app_icon,
+            browser::browser_open,
+            browser::browser_place,
+            browser::browser_navigate,
+            browser::browser_go,
+            browser::browser_reload,
+            browser::browser_focus,
+            browser::browser_focus_main,
+            browser::browser_close,
+            browser::browser_set_keys,
             glow::edge_glow,
             onboarding::open_onboarding,
             notch::notch_hit,

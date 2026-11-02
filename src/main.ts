@@ -32,6 +32,7 @@ import { openBranchPicker } from "./branchpicker";
 import { showToast } from "./toast";
 import { withSetupOverlay } from "./loading";
 import type { TermSession } from "./terminal";
+import { onPageShortcut, setPageShortcuts } from "./webview";
 import { HomePage, HomeRow, liveHomeSource } from "./home";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Page } from "./page";
@@ -45,7 +46,7 @@ import { THEMES, loadTheme, setTheme } from "./themes";
 import { resetZoom, zoom } from "./fonts";
 import { keepLayoutSaved, loadLayout } from "./layoutStore";
 import { addLoadout, cleanLoadoutName, findLoadout, onLoadoutsChange, usableLoadouts } from "./loadouts";
-import { installHoldHints, installShortcuts, type Action } from "./shortcuts";
+import { installHoldHints, installShortcuts, keymap, onKeymapChange, type Action } from "./shortcuts";
 import { runnable } from "./macros";
 import { confirmClose } from "./closeGuard";
 import { shouldOnboard } from "./firstRun";
@@ -65,7 +66,12 @@ const sidebar = new Sidebar(
   (tabIds, groupIds) => saveLoadout(tabIds, groupIds),
 );
 const dirPicker = new DirPicker($("#terminals"));
-const focusTerminal = () => ws.activeTab?.session.term.focus();
+const focusTerminal = () => ws.activeTab?.session.focus();
+/** The focused pane if it's a shell (not a browser). */
+const focusedShell = () => {
+  const pane = ws.activeTab?.session;
+  return pane?.kind === "shell" ? pane : undefined;
+};
 const settings = new Settings($("#terminals"));
 settings.onOpenLoadout = deployLoadout;
 const shortcutsPage = new ShortcutsPage($("#terminals"));
@@ -90,7 +96,11 @@ const homePage = new HomePage(
       ws.newTab(undefined, dir, command ? [command] : undefined);
     },
     reveal: (path) => void revealItemInDir(path),
-    openServer: (server) => void openUrl(serverUrl(server)),
+    // Beside the shell running it, when that has room; else in a tab of its own.
+    openServer: (server) => {
+      Page.closeAll();
+      ws.openBrowser(serverUrl(server), server.session ?? undefined);
+    },
     jumpToServer: (session) => {
       ws.reveal(session);
       Page.closeAll();
@@ -108,7 +118,7 @@ feedNotch(monitor, {
     ws.reveal(agent.session);
     Page.closeAll();
   },
-  newTicket: () => homePage.compose(),
+  newTicket: () => homePage.newTicket(),
   teleport: () => newTabIn(),
 });
 
@@ -521,6 +531,12 @@ async function split(dir: "right" | "down") {
   ws.split(dir, await currentCwd());
 }
 
+/** Opens a browser to the right of the focused pane, or in a new tab if the tab's full. */
+function splitBrowser() {
+  if (ws.canSplit(ws.activeTab, "right")) ws.split("right", undefined, "");
+  else ws.newBrowserTab();
+}
+
 /** ⌘W closes the focused pane of a split tab, or the selected tabs otherwise. */
 function close() {
   const ids = ws.selectedIds();
@@ -762,6 +778,7 @@ const handlers: Record<Action, () => void> = {
   openSettings: () => settings.toggle(),
   openShortcuts: () => shortcutsPage.toggle(),
   openServers: () => homePage.showServers(),
+  newTicket: () => homePage.newTicket(),
   searchTabs,
   closeTab: close,
   splitRight: () => void split("right"),
@@ -781,15 +798,17 @@ const handlers: Record<Action, () => void> = {
   renameTab: () => ws.activeId != null && sidebar.startRename("tab", ws.activeId),
   toggleSidebar,
   collapseSidebar,
-  selectAll: () => ws.activeTab?.session.term.selectAll(),
-  clear: () => ws.activeTab?.session.term.clear(),
-  findInTerminal: () => ws.activeTab?.session.openFind(),
+  selectAll: () => focusedShell()?.term.selectAll(),
+  clear: () => focusedShell()?.term.clear(),
+  findInTerminal: () => focusedShell()?.openFind(),
   zoomIn: () => zoom(1),
   zoomOut: () => zoom(-1),
   resetZoom,
   maximizePane: () => ws.toggleMaximized(),
   arrangePanes: () => layoutPicker.open(),
-  toggleFileTree: () => ws.activeTab?.session.toggleTree(),
+  toggleFileTree: () => focusedShell()?.toggleTree(),
+  newBrowser: () => ws.newBrowserTab(),
+  splitBrowser,
   goToTab1: () => ws.activateIndex(1),
   goToTab2: () => ws.activateIndex(2),
   goToTab3: () => ws.activateIndex(3),
@@ -806,6 +825,7 @@ const PAGE_SAFE = new Set<Action>([
   "openSettings",
   "openShortcuts",
   "openServers",
+  "newTicket",
   "toggleSidebar",
   "collapseSidebar",
   "newTabIn",
@@ -830,6 +850,22 @@ for (const action of Object.keys(handlers) as Action[]) {
 }
 installShortcuts(handlers);
 installHoldHints();
+
+// A browser pane's page has the keyboard to itself, so it hands Workdesk's
+// shortcuts over, except ones a page should keep (select all, find, zoom).
+const PAGE_KEEPS = new Set<Action>(["selectAll", "clear", "findInTerminal", "toggleFileTree", "zoomIn", "zoomOut", "resetZoom"]);
+const syncPageShortcuts = () =>
+  setPageShortcuts(
+    Object.entries(keymap())
+      .filter(([, action]) => !PAGE_KEEPS.has(action))
+      .map(([combo]) => combo),
+  );
+syncPageShortcuts();
+onKeymapChange(syncPageShortcuts);
+onPageShortcut((combo) => {
+  const action = keymap()[combo];
+  if (action && !PAGE_KEEPS.has(action)) handlers[action]();
+});
 
 // Title bar mirrors the open page, or else the active tab.
 const titleEl = $("#title");
@@ -881,7 +917,7 @@ resizer.addEventListener("mousedown", (e) => {
     document.body.classList.remove("resizing");
     window.removeEventListener("mousemove", onMove);
     window.removeEventListener("mouseup", onUp);
-    ws.activeTab?.session.term.focus();
+    ws.activeTab?.session.focus();
   };
   window.addEventListener("mousemove", onMove);
   window.addEventListener("mouseup", onUp);
