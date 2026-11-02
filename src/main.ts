@@ -16,6 +16,7 @@ import {
   buildPrompt,
   claudeResume,
   claudeStart,
+  mergedAt,
   rememberRepo,
   repoFor,
   sessionLabel,
@@ -75,6 +76,7 @@ const homePage = new HomePage(
     startBranch: startTicketBranch,
     openSession: recallSession,
     endSession,
+    endMergedSessions,
     jumpTo: (agent) => {
       ws.reveal(agent.session);
       Page.closeAll();
@@ -265,11 +267,15 @@ const tabOf = (pane: TermSession) => [...ws.tabs.values()].find((t) => t.session
  * worktree, and its branch too once its PR is merged. Resolves "" if the
  * pane was kept open.
  */
-async function endSession(session: Session): Promise<string> {
+async function endSession(session: Session, quiet = false): Promise<string> {
   const pane = ws.paneForSession(session.id);
   const tab = pane && tabOf(pane);
   if (pane && tab) {
-    await ws.requestClosePane(tab.id, pane);
+    // Quietly, a pane whose Claude is idle just closes; a busy one is left alone.
+    if (quiet) {
+      if (claudeBusy(session)) return "";
+      ws.closePane(tab.id, pane);
+    } else await ws.requestClosePane(tab.id, pane);
     if (ws.paneForSession(session.id)) return "";
   }
   const merged = session.pull?.state === "MERGED";
@@ -278,6 +284,61 @@ async function endSession(session: Session): Promise<string> {
   // A Workdesk ticket whose PR merged is done; otherwise it goes back to the backlog.
   if (merged && session.ticket?.provider === "workdesk") ticketStore.removeNative(session.ticket.id);
   return msg;
+}
+
+/** Whether `s`'s Claude is mid-task or waiting on an answer (same as the session's "working"/"waiting"). */
+const claudeBusy = (s: Session) => {
+  const status = sessionStore.agentFor(s)?.status;
+  return status !== undefined && status !== "idle" && status !== "error";
+};
+
+/**
+ * Ends every session whose PR is merged, one at a time (git locks the repo
+ * while it removes a worktree). With `olderThan`, only those merged at least
+ * that long ago. Panes whose Claude is busy, and worktrees with uncommitted
+ * changes, are left alone.
+ */
+async function endMerged(olderThan = 0): Promise<{ ended: number; failed: string[] }> {
+  const now = Date.now();
+  const due = sessionStore.all.filter((s) => {
+    if (s.pull?.state !== "MERGED") return false;
+    if (!olderThan) return true;
+    const at = mergedAt(s);
+    return at !== null && now - at >= olderThan;
+  });
+  let ended = 0;
+  const failed: string[] = [];
+  for (const s of due) {
+    if (!sessionStore.get(s.id)) continue;
+    try {
+      if (await endSession(s, true)) ended++;
+      else failed.push(`${sessionLabel(s)} (Claude is busy)`);
+    } catch (e) {
+      failed.push(`${sessionLabel(s)}: ${e}`);
+    }
+  }
+  return { ended, failed };
+}
+
+/** Home's "End all merged" button. */
+async function endMergedSessions(): Promise<string> {
+  const { ended, failed } = await endMerged();
+  if (failed.length && !ended) throw new Error(`Couldn't end ${failed.join("; ")}`);
+  const done = ended ? `Ended ${ended} merged session${ended === 1 ? "" : "s"}` : "No merged sessions to end";
+  return failed.length ? `${done}. Kept ${failed.join("; ")}` : done;
+}
+
+const AUTO_END_AFTER = 24 * 60 * 60 * 1000;
+/** Sessions the sweep couldn't end; it says so once, then leaves them to you. */
+const autoEndFailed = new Set<string>();
+
+/** Ends sessions merged over a day ago, freeing their worktrees' disk space. */
+async function autoEndMerged() {
+  const { ended, failed } = await endMerged(AUTO_END_AFTER);
+  const fresh = failed.filter((f) => !autoEndFailed.has(f));
+  for (const f of failed) autoEndFailed.add(f);
+  if (ended) showToast(`Ended ${ended} session${ended === 1 ? "" : "s"} merged over a day ago`, 5000);
+  if (fresh.length) showToast(`Couldn't clean up ${fresh.join("; ")}`, 8000);
 }
 
 /** Attaches `ticket` to `session`, renaming its pane after it. */
@@ -817,6 +878,9 @@ ws.startGitPolling();
 monitor.start();
 sessionStore.start((fn) => monitor.onChange(fn));
 void pruneSessions();
+// Once the first PR checks are in, then hourly.
+setTimeout(() => void autoEndMerged(), 30_000);
+setInterval(() => void autoEndMerged(), 60 * 60 * 1000);
 servers.start();
 ticketStore.start();
 // Start on Home; last time's tabs are restored behind it.

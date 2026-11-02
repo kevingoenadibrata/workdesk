@@ -242,6 +242,12 @@
   color: var(--muted);
   font-size: 11.5px;
 }
+.home-group-action {
+  margin-left: auto;
+}
+.home-group-action:disabled {
+  opacity: 0.5;
+}
 .home-group-label .dot {
   width: 6px;
   height: 6px;
