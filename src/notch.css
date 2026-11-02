@@ -272,3 +272,8 @@ html.notch-window body {
 .meter[data-level="high"] span {
   color: var(--st-error);
 }
+
+/* An agent that just stopped or needs you, when the panel pops open for it. */
+.row.fresh {
+  background: color-mix(in srgb, var(--st, #fff) 14%, #111114);
+}
