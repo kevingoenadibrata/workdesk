@@ -1280,7 +1280,7 @@
   display: flex;
   align-items: stretch;
   gap: 10px;
-  width: min(780px, 100%);
+  width: min(960px, 100%);
 }
 .home-side .home-limits {
   flex: 1;
@@ -1322,6 +1322,91 @@
 }
 .home-servers:not(.live) .home-servers-count {
   color: var(--muted);
+}
+
+/* The phone mirror's card, right of the servers: its QR code, and a light
+   each for this Mac and a phone being on Tailscale. */
+.home-phone {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-align: left;
+}
+.home-phone:hover {
+  background: color-mix(in srgb, var(--raised) 85%, var(--bg));
+  color: var(--text);
+}
+.home-phone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-phone-qr {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border-radius: 6px;
+  background: #fff;
+}
+.home-phone:not(.mirror-off) .home-phone-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* With the mirror off there's no code to scan: an empty tile. */
+.home-phone.mirror-off .home-phone-qr {
+  padding: 0;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--faint);
+}
+.home-phone-lights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.home-phone-light {
+  display: grid;
+  grid-template-columns: 7px auto;
+  column-gap: 7px;
+  align-items: center;
+  line-height: 1.25;
+}
+.home-phone-dot {
+  grid-row: span 2;
+  align-self: start;
+  margin-top: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.home-phone-light.on .home-phone-dot {
+  background: var(--live);
+}
+.home-phone-light.off .home-phone-dot {
+  background: var(--danger);
+}
+.home-phone-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.home-phone-state {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
 }
 
 .home-drawer-backdrop {

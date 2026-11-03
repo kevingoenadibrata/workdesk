@@ -6,7 +6,7 @@ import { setPhoneMirrorWanted } from "./phoneFeed";
 import { showToast } from "./toast";
 
 /** A phone signed in to Tailscale as the same person as this Mac. */
-interface Device {
+export interface Device {
   name: string;
   os: string;
   online: boolean;
@@ -14,7 +14,7 @@ interface Device {
 }
 
 /** What `phone_status` (src-tauri/src/phone.rs) reports. */
-interface PhoneStatus {
+export interface PhoneStatus {
   on: boolean;
   installed: boolean;
   node: { state: string; login: string | null; host: string | null; https: boolean; phones: Device[] } | null;
@@ -27,6 +27,23 @@ interface PhoneStatus {
 }
 
 const POLL_MS = 4000;
+
+/** Where the mirror stands, and its address as a QR code: what Home's phone card reads. */
+export interface PhoneSource {
+  status(): Promise<PhoneStatus>;
+  qr(text: string): Promise<string>;
+}
+
+export const livePhone: PhoneSource = {
+  status: () => invoke<PhoneStatus>("phone_status"),
+  qr: (text) => invoke<string>("phone_qr", { text }),
+};
+
+/** This Mac is on Tailscale: running and signed in. */
+export const desktopOnTailscale = (s: PhoneStatus) => s.node?.state === "Running" && !!s.node.login;
+
+/** The phones of this Mac's Tailscale account that are online now. */
+export const phonesOnline = (s: PhoneStatus) => (desktopOnTailscale(s) ? (s.node?.phones ?? []).filter((p) => p.online) : []);
 
 function ago(iso: string): string {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -129,7 +146,7 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
   const render = (s: PhoneStatus) => {
     status = s;
     const node = s.node;
-    const running = node?.state === "Running" && !!node.login;
+    const running = desktopOnTailscale(s);
 
     // Mirror.
     mirror.classList.toggle("connected", s.on);
