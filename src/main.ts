@@ -151,8 +151,11 @@ function startTicketBranch(_ticket: unknown, branch: string): Promise<string> {
     );
   });
 }
-/** Asks which folder holds `ticket`'s repo (Teleport, folders only). Resolves undefined if dismissed. */
-function pickRepo(ticket: Ticket): Promise<string | undefined> {
+/**
+ * Asks which folder holds `ticket`'s repo (Teleport, folders only), starting
+ * on `suggested` when given. Resolves undefined if dismissed.
+ */
+function pickRepo(ticket: Ticket, suggested?: string): Promise<string | undefined> {
   const title = document.createElement("span");
   const id = document.createElement("code");
   id.textContent = ticket.id;
@@ -162,7 +165,7 @@ function pickRepo(ticket: Ticket): Promise<string | undefined> {
       (dir) => resolve(dir),
       () => resolve(undefined),
       undefined,
-      { title, placeholder: "Pick the repo's folder…  (~/ or / to browse)", plain: true },
+      { title, placeholder: "Pick the repo's folder…  (~/ or / to browse)", plain: true, ...(suggested ? { cwd: suggested } : {}) },
     );
   });
 }
@@ -181,15 +184,17 @@ function openSessionPane(session: Session, command: string) {
  * ticket's repo (asked for once per project), then opens a session there
  * with the ticket as Claude's brief. Home stays open, so the next ticket can
  * follow. A ticket that already has a session picks that one back up.
+ * `askRepo` always asks for the repo, starting on the remembered one, as a
+ * ticket just written does: its project alone doesn't say where it's worked on.
  */
-async function handToClaude(ticket: Ticket, branch: string): Promise<string> {
+async function handToClaude(ticket: Ticket, branch: string, askRepo = false): Promise<string> {
   const known = sessionStore.forTicket(ticket);
   if (known) {
     recallSession(known);
     return "";
   }
   const remembered = repoFor(ticket);
-  const dir = remembered ?? (await pickRepo(ticket));
+  const dir = remembered && !askRepo ? remembered : await pickRepo(ticket, remembered);
   if (!dir) return "";
   const started = await withSetupOverlay({ ticket: ticket.id, branch }, async () => {
     let started;
