@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { el } from "./page";
 import { Bell, Copy, Smartphone, icon } from "./icons";
-import { setPhoneMirrorWanted } from "./phoneFeed";
 import { showToast } from "./toast";
 
 /** A phone signed in to Tailscale as the same person as this Mac. */
@@ -55,21 +54,21 @@ function ago(iso: string): string {
 }
 
 /**
- * Settings → Phone: the phone mirror's switch, where Tailscale stands, the
+ * Settings → Phone: whether the phone mirror is on, where Tailscale stands, the
  * address and its QR code, and which phones are online, watching or getting
- * notifications. Refreshes while it's showing. Returns the switch to focus.
+ * notifications. Refreshes while it's showing. Nothing in it takes focus.
  */
-export function buildPhoneSettings(content: HTMLElement): HTMLElement {
+export function buildPhoneSettings(content: HTMLElement): HTMLElement | null {
   const section = el("section", "page-section");
   const title = el("h2", "page-section-title");
   title.append(icon(Smartphone, 16, "page-section-icon"), "Phone mirror");
   const intro = el(
     "p",
     "page-intro",
-    "Watch your tabs, agents and terminals from your phone, at home or away. It goes over Tailscale, so only devices signed in to your own Tailscale account can open it. The phone can only look: nothing it does reaches a terminal.",
+    "Watch your tabs, agents and terminals from your phone, at home or away. It's on whenever this Mac is on Tailscale, and only devices signed in to your own Tailscale account can open it. The phone can only look: nothing it does reaches a terminal.",
   );
 
-  // The switch, and where to open it.
+  // Where to open it.
   const mirror = el("div", "integration phone-card");
   const mirrorHead = el("div", "integration-head");
   const mirrorLogo = el("span", "integration-logo");
@@ -77,9 +76,7 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
   const mirrorText = el("div", "integration-text");
   const mirrorStatus = el("div", "integration-status");
   mirrorText.append(el("div", "integration-name", "Phone mirror"), mirrorStatus);
-  const toggle = el("button", "integration-connect phone-toggle");
-  toggle.setAttribute("role", "switch");
-  mirrorHead.append(mirrorLogo, mirrorText, toggle);
+  mirrorHead.append(mirrorLogo, mirrorText);
   const error = el("p", "integration-error");
   const open = el("div", "phone-open");
   const qr = el("div", "phone-qr");
@@ -134,13 +131,12 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
   const footnote = el(
     "p",
     "page-footnote",
-    "Workdesk listens on this Mac only (127.0.0.1) and asks Tailscale to forward port 8443 on your tailnet to it with tailscale serve. Turning the mirror off removes that again. Notifications travel through Apple's or Google's push service encrypted, and wait while Workdesk is in front.",
+    "Workdesk listens on this Mac only (127.0.0.1) and asks Tailscale to forward port 8443 on your tailnet to it with tailscale serve. Notifications travel through Apple's or Google's push service encrypted, and wait while Workdesk is in front.",
   );
   section.append(footnote);
   content.append(section);
 
   let status: PhoneStatus | null = null;
-  let busy = false;
   let qrFor = "";
 
   const render = (s: PhoneStatus) => {
@@ -150,16 +146,15 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
 
     // Mirror.
     mirror.classList.toggle("connected", s.on);
-    toggle.setAttribute("aria-checked", String(s.on));
-    toggle.textContent = busy ? (s.on ? "Turning off…" : "Turning on…") : s.on ? "Turn off" : "Turn on";
-    toggle.disabled = busy || (!s.on && !running);
     mirrorStatus.textContent = s.on
       ? s.viewers.length
         ? `On · ${s.viewers.join(", ")} watching`
         : s.serving
           ? "On · no phone watching"
           : "On · waiting for Tailscale serve"
-      : "Off";
+      : running
+        ? "Starting…"
+        : "Waiting for Tailscale";
     error.textContent = s.error ?? "";
     open.hidden = !(s.on && s.url);
     if (s.on && s.url) {
@@ -240,23 +235,6 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
     }
   };
 
-  toggle.addEventListener("click", async () => {
-    if (!status || busy) return;
-    const on = !status.on;
-    busy = true;
-    render(status);
-    try {
-      const s = await invoke<PhoneStatus>("phone_enable", { on });
-      setPhoneMirrorWanted(on);
-      busy = false;
-      render(s);
-    } catch (e) {
-      busy = false;
-      setPhoneMirrorWanted(false);
-      await refresh();
-      error.textContent = String(e);
-    }
-  });
   copy.addEventListener("click", () => {
     if (!status?.url) return;
     void navigator.clipboard.writeText(status.url).then(() => showToast("Copied the phone mirror's address"));
@@ -272,7 +250,7 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement {
     if (!section.isConnected) return window.clearInterval(timer);
     void refresh();
   }, POLL_MS);
-  return toggle;
+  return null;
 }
 
 /** Tailscale's mark: nine dots, the bottom-left six dimmed. */

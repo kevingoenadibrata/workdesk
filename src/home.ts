@@ -706,9 +706,7 @@ export class HomePage extends Page {
     set(card.phone, online.length > 0, `Phone: ${phoneState}`);
     card.root.title = url
       ? `Scan to open Workdesk on your phone: ${url}`
-      : s?.on
-        ? "Phone mirror is on; waiting for Tailscale"
-        : "Phone mirror is off. Turn it on in Settings → Phone";
+      : "The phone mirror starts once this Mac is on Tailscale";
     card.root.classList.toggle("mirror-off", !url);
     if (url !== this.qrFor) {
       this.qrFor = url;

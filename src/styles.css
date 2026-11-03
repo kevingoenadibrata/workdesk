@@ -7400,14 +7400,6 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 .phone-card .integration-help:empty {
   display: none;
 }
-.phone-toggle[aria-checked="false"]:enabled {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.phone-toggle[aria-checked="false"]:hover:enabled {
-  background: var(--accent);
-  filter: brightness(1.08);
-}
 .phone-ts-logo {
   color: var(--text);
 }

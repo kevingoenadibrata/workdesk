@@ -230,7 +230,7 @@ async function whyDown(): Promise<string> {
   try {
     const res = await fetch("/api/push/key", { cache: "no-store" });
     if (res.ok) return "";
-    if (res.status === 502 || res.status === 503 || res.status === 504) return "Workdesk isn't running on your Mac, or its phone mirror is off.";
+    if (res.status === 502 || res.status === 503 || res.status === 504) return "Workdesk isn't running on your Mac.";
     return (await res.text()) || `The Mac answered ${res.status}.`;
   } catch {
     return "Can't reach your Mac. Is Tailscale on, on this phone?";
