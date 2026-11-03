@@ -13,6 +13,7 @@ mod phone;
 mod pty;
 mod servers;
 mod shottr;
+mod surfaces;
 mod tailscale;
 mod tickets;
 mod usage;
@@ -119,11 +120,16 @@ pub fn run() {
             if let Some(main) = app.get_webview("main") {
                 keystop::contain_keys(&main);
             }
-            if let Err(e) = notch::open(app.handle()) {
-                eprintln!("notch: {e}");
+            let shown = surfaces::load();
+            if shown.notch {
+                if let Err(e) = notch::open(app.handle()) {
+                    eprintln!("notch: {e}");
+                }
             }
-            if let Err(e) = dock::open(app.handle()) {
-                eprintln!("dock: {e}");
+            if shown.dock {
+                if let Err(e) = dock::open(app.handle()) {
+                    eprintln!("dock: {e}");
+                }
             }
             shottr::start(app.handle());
             phone::init(app.handle());
@@ -165,6 +171,8 @@ pub fn run() {
             notch::notch_jump,
             notch::notch_action,
             dock::dock_drop,
+            surfaces::surfaces_get,
+            surfaces::surfaces_set,
             shottr::shottr_installed,
             shottr::shottr_grab,
             shottr::shottr_ticket,
