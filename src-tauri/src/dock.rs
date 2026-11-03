@@ -62,7 +62,7 @@ const POLL_MS: u64 = 500;
 /// How often the pointer is checked for dimming; places every `POLL_MS`.
 const TICK_MS: u64 = 100;
 /// How long without the pointer near the Dock before the cards dim.
-const IDLE: Duration = Duration::from_secs(10);
+const IDLE: Duration = Duration::from_secs(4);
 /// The cards' opacity while dimmed.
 const DIM_ALPHA: f64 = 0.35;
 /// After an app launches or quits, re-read at these delays (ms) to follow the
