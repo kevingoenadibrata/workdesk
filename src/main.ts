@@ -58,7 +58,8 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 
 loadTheme();
 
-const ws = new Workspace($("#terminals"), () => void invoke("close_main_window"));
+// Closing the last tab keeps the window open and goes back to Home.
+const ws = new Workspace($("#terminals"), () => homePage.open());
 const sidebar = new Sidebar(
   $("#tablist"),
   ws,
@@ -910,7 +911,10 @@ Page.onChange(() => {
     else button.removeAttribute("aria-current");
   }
   updateTitle();
-  if (!page) focusTerminal();
+  if (page) return;
+  // With no tabs there's nothing behind a page, so fall back to Home.
+  if (ws.tabs.size === 0) homePage.open();
+  else focusTerminal();
 });
 
 // Keep every terminal sized to the pane.
@@ -951,14 +955,15 @@ try {
 } catch {}
 setSidebarCollapsed(startCollapsed);
 
-// Reopen last time's tabs, splits and groups, or start with one tab.
+// Reopen last time's tabs, splits and groups, or start with one tab. A layout
+// saved with no tabs (the last one was closed) starts on Home with none.
 // Panes that were sessions pick their Claude back up.
 const saved = loadLayout();
 const resume = (id: string) => {
   const s = sessionStore.get(id);
   return s ? { cwd: s.path, commands: [claudeResume(s)], name: sessionLabel(s) } : null;
 };
-if (!saved || !ws.restore(saved, resume)) ws.newTab();
+if (!saved || (!ws.restore(saved, resume) && saved.items.length > 0)) ws.newTab();
 keepLayoutSaved(ws);
 applyAppIcon();
 ws.startTitlePolling();
