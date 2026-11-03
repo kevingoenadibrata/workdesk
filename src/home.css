@@ -1369,14 +1369,16 @@
   border: 1px dashed var(--border);
   color: var(--faint);
 }
+/* As wide as the QR code above: one light at each edge. */
 .home-phone-lights {
   display: flex;
-  gap: 14px;
+  justify-content: space-between;
+  width: 64px;
 }
 .home-phone-light {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   color: var(--muted);
 }
 .home-phone-dot {
