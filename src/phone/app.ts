@@ -1,12 +1,13 @@
 // The phone mirror's web app (WD-24). Served by Workdesk itself
 // (src-tauri/src/phone.rs) over Tailscale, it lists the Mac's tabs and agents
 // and shows any terminal live. It can only look: nothing typed here reaches
-// the Mac.
+// the Mac. It's drawn like the Mac app: the sidebar's tab rows, the pane
+// header and status bar's chips, Home's status badges.
 
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import "./phone.css";
-import { ArrowLeft, Bell, Globe, SquareTerminal, icon } from "../icons";
+import { Bell, ChevronLeft, ChevronRight, Folder, Globe, SquareTerminal, icon } from "../icons";
 import type { PhonePane, PhoneState, PhoneTab } from "../phoneFeed";
 
 const $ = <T extends HTMLElement>(tag: string, className = "", text?: string): T => {
@@ -16,57 +17,62 @@ const $ = <T extends HTMLElement>(tag: string, className = "", text?: string): T
   return node;
 };
 
+/** Dev only: `?demo` shows made-up tabs, to work on the look without a phone. */
+const demo = import.meta.env.DEV && new URLSearchParams(location.search).has("demo");
+
 // ---- page ----
 
 const bar = $("header", "bar");
 const brand = $("div", "brand", "Workdesk");
 const live = $("span", "live");
-const bell = $<HTMLButtonElement>("button", "bell");
+const bell = $<HTMLButtonElement>("button", "icon-button bell");
 bell.setAttribute("aria-label", "Notifications");
-bell.append(icon(Bell, 18));
+bell.append(icon(Bell, 17));
 bar.append(brand, live, bell);
 
-const list = $("main", "list");
 const banner = $("div", "banner");
 banner.hidden = true;
+const list = $("main", "list");
 
 const termView = $("section", "term-view");
 termView.hidden = true;
 const termBar = $("header", "bar term-bar");
-const back = $<HTMLButtonElement>("button", "back");
-back.append(icon(ArrowLeft, 18), "Tabs");
+const back = $<HTMLButtonElement>("button", "icon-button back");
+back.setAttribute("aria-label", "Back to tabs");
+back.append(icon(ChevronLeft, 20));
 const termTitle = $("div", "term-title");
-const zoom = $<HTMLButtonElement>("button", "zoom", "Fit");
+const zoom = $<HTMLButtonElement>("button", "chip zoom", "Zoom");
 termBar.append(back, termTitle, zoom);
-const termStatus = $("div", "term-status");
 const termBox = $("div", "term-box");
 const termHost = $("div", "term-host");
 termBox.append(termHost);
-termView.append(termBar, termStatus, termBox);
+const termStatus = $("footer", "term-status");
+termView.append(termBar, termBox, termStatus);
 
 const sheet = $("div", "sheet");
 sheet.hidden = true;
 
 document.body.append(bar, banner, list, termView, sheet);
 
-// ---- theme ----
+// ---- theme: the same variables the Mac app paints (src/themes.ts) ----
 
 function paint(t: PhoneState["theme"]) {
   const mix = (pct: number, base = t.bg) => `color-mix(in srgb, ${t.fg} ${pct}%, ${base})`;
   const vars: Record<string, string> = {
     "--bg": t.bg,
     "--text": t.fg,
-    "--raised": t.light ? mix(4) : mix(7),
+    "--sidebar": mix(t.light ? 4 : 3.5),
+    "--raised": t.light ? mix(1.5) : mix(7),
     "--sunken": t.light ? mix(3.5) : `color-mix(in srgb, ${t.bg} 70%, #000)`,
-    "--border": mix(t.light ? 12 : 11),
     "--muted": mix(58),
     "--faint": mix(38),
     "--accent": t.accent,
     "--danger": t.danger,
   };
+  for (const [name, hex] of Object.entries(t.groups ?? {})) vars[`--group-${name}`] = hex;
   for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v);
   document.documentElement.style.colorScheme = t.light ? "light" : "dark";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", t.bg);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", vars["--sidebar"]);
   if (term) term.options.theme = t.term;
 }
 
@@ -75,15 +81,6 @@ function paint(t: PhoneState["theme"]) {
 let state: PhoneState | null = null;
 let openPty: number | null = null;
 
-const STATUS_CLASS: Record<string, string> = {
-  thinking: "busy",
-  working: "busy",
-  waiting: "alert",
-  error: "alert",
-  idle: "idle",
-  unknown: "idle",
-};
-
 function since(ms: number) {
   const s = Math.max(0, (Date.now() - ms) / 1000);
   if (s < 60) return `${Math.round(s)}s`;
@@ -91,56 +88,125 @@ function since(ms: number) {
   return `${Math.round(s / 3600)}h`;
 }
 
-function paneRow(tab: PhoneTab, pane: PhonePane) {
-  const row = $<HTMLButtonElement>("button", "pane");
-  row.disabled = pane.pty == null || pane.kind === "web";
-  const head = $("div", "pane-head");
-  head.append(icon(pane.kind === "web" ? Globe : SquareTerminal, 14, "pane-icon"));
-  head.append($("span", "pane-name", pane.agent ? pane.agent.harness : pane.name));
-  if (pane.cwd) head.append($("span", "pane-cwd", pane.cwd));
-  row.append(head);
-  const a = pane.agent;
-  if (a) {
-    const badge = $("span", `badge ${STATUS_CLASS[a.status] ?? "idle"}`, `${a.label} · ${since(a.since)}`);
-    head.append(badge);
-    if (a.detail) row.append($("div", "pane-detail", a.detail));
-    if (a.lastLog.length) {
-      const log = $("pre", "pane-log");
-      log.textContent = a.lastLog.slice(-3).join("\n");
-      row.append(log);
-    }
+/** The sidebar's miniature of a tab's pane grid. */
+function layoutGlyph(tab: PhoneTab) {
+  const glyph = $("span", "tab-layout");
+  for (const rows of tab.columns.length ? tab.columns : [1]) {
+    const col = $("span", "tab-layout-col");
+    for (let i = 0; i < rows; i++) col.append($("span", "tab-layout-pane"));
+    glyph.append(col);
   }
-  if (!row.disabled) row.addEventListener("click", () => openTerminal(pane.pty!, tab));
-  return row;
+  return glyph;
+}
+
+function badge(a: NonNullable<PhonePane["agent"]>, withTime = true) {
+  const b = $("span", "badge", withTime ? `${a.label} · ${since(a.since)}` : a.label);
+  b.dataset.status = a.status;
+  return b;
+}
+
+/** What a pane is: its program (or agent) and folder, as the pane's chips show them. */
+function paneMeta(pane: PhonePane) {
+  const meta = $("div", "pane-meta");
+  const what = $("span", "meta-item");
+  what.append(icon(pane.kind === "web" ? Globe : SquareTerminal, 12), pane.agent?.harness ?? pane.name);
+  meta.append(what);
+  if (pane.cwd) {
+    const where = $("span", "meta-item cwd");
+    where.append(icon(Folder, 12), pane.cwd);
+    meta.append(where);
+  }
+  return meta;
+}
+
+/** One pane: its agent's detail and latest lines, if it runs one (and isn't already shown under "Needs you"). */
+function paneBody(row: HTMLElement, pane: PhonePane, brief = false) {
+  row.append(paneMeta(pane));
+  const a = pane.agent;
+  if (!a || brief) return;
+  if (a.detail) row.append($("div", "pane-detail", a.detail));
+  if (a.lastLog.length) {
+    const log = $("div", "pane-log");
+    for (const line of a.lastLog.slice(-3)) log.append($("div", "", line));
+    row.append(log);
+  }
+}
+
+function canOpen(pane: PhonePane) {
+  return pane.pty != null && pane.kind !== "web";
+}
+
+/** A tab as the sidebar draws it; one with a single pane opens straight to its terminal. */
+function tabRow(tab: PhoneTab) {
+  const single = tab.panes.length === 1 ? tab.panes[0] : null;
+  const row = $<HTMLButtonElement>("button", "row tab");
+  row.style.setProperty("--group-color", tab.color);
+  row.classList.toggle("active", tab.active);
+  const head = $("div", "row-head");
+  head.append(layoutGlyph(tab), $("span", "tab-title", tab.title));
+  if (single?.agent) head.append(badge(single.agent));
+  const go = single && canOpen(single);
+  if (go) head.append(icon(ChevronRight, 16, "row-chevron"));
+  row.append(head);
+  if (single) {
+    paneBody(row, single, !!single.agent?.needsYou);
+    if (go) row.addEventListener("click", () => openTerminal(single.pty!));
+    else row.disabled = true;
+    return [row];
+  }
+  row.disabled = true;
+  const panes = tab.panes.map((pane) => {
+    const sub = $<HTMLButtonElement>("button", "row pane");
+    sub.style.setProperty("--group-color", tab.color);
+    const subHead = $("div", "row-head");
+    subHead.append($("span", "pane-dot"), $("span", "pane-name", pane.agent?.harness ?? pane.name));
+    if (pane.agent) subHead.append(badge(pane.agent));
+    if (canOpen(pane)) subHead.append(icon(ChevronRight, 16, "row-chevron"));
+    sub.append(subHead);
+    paneBody(sub, pane, !!pane.agent?.needsYou);
+    sub.querySelector(".pane-meta .meta-item:not(.cwd)")?.remove();
+    if (canOpen(pane)) sub.addEventListener("click", () => openTerminal(pane.pty!));
+    else sub.disabled = true;
+    return sub;
+  });
+  return [row, ...panes];
 }
 
 function renderList() {
   if (!state) return;
-  const cards: HTMLElement[] = [];
+  const nodes: HTMLElement[] = [];
   const needs = state.tabs.flatMap((t) => t.panes.filter((p) => p.agent?.needsYou).map((p) => ({ t, p })));
   if (needs.length) {
-    const box = $("section", "needs");
-    box.append($("h2", "section-title", "Needs you"));
+    nodes.push($("div", "section-label needs-label", "Needs you"));
     for (const { t, p } of needs) {
-      const row = paneRow(t, p);
-      row.prepend($("div", "needs-tab", t.title));
-      box.append(row);
+      const row = $<HTMLButtonElement>("button", "row needs");
+      row.style.setProperty("--group-color", t.color);
+      const head = $("div", "row-head");
+      head.append(layoutGlyph(t), $("span", "tab-title", t.title), badge(p.agent!));
+      if (canOpen(p)) head.append(icon(ChevronRight, 16, "row-chevron"));
+      row.append(head);
+      paneBody(row, p);
+      if (canOpen(p)) row.addEventListener("click", () => openTerminal(p.pty!));
+      nodes.push(row);
     }
-    cards.push(box);
+    nodes.push($("div", "section-label", "Tabs"));
   }
+  let group: string | null = null;
   for (const tab of state.tabs) {
-    const card = $("section", "tab");
-    card.style.setProperty("--tab-color", tab.color);
-    const head = $("div", "tab-head");
-    head.append($("span", "tab-title", tab.title));
-    if (tab.group) head.append($("span", "tab-group", tab.group));
-    if (tab.active) head.append($("span", "tab-active", "In front"));
-    card.append(head);
-    for (const pane of tab.panes) card.append(paneRow(tab, pane));
-    cards.push(card);
+    if (tab.group !== group) {
+      group = tab.group;
+      if (group) {
+        const header = $("div", "group-header", group);
+        header.style.setProperty("--group-color", tab.color);
+        nodes.push(header);
+      }
+    }
+    const rows = tabRow(tab);
+    if (tab.group) for (const r of rows) r.classList.add("in-group");
+    nodes.push(...rows);
   }
-  if (!state.tabs.length) cards.push($("p", "empty", "No tabs open in Workdesk."));
-  list.replaceChildren(...cards);
+  if (!state.tabs.length) nodes.push($("p", "empty", "No tabs open in Workdesk."));
+  list.replaceChildren(...nodes);
   if (openPty != null) {
     const found = findPane(openPty);
     if (found) termStatusFor(found.tab, found.pane);
@@ -173,19 +239,26 @@ async function whyDown(): Promise<string> {
 
 let stateSource: EventSource | null = null;
 
+function showState(next: PhoneState) {
+  state = next;
+  paint(next.theme);
+  banner.hidden = true;
+  setLive("live", "Live");
+  renderList();
+}
+
 function connectState() {
+  if (demo) {
+    void import("./demo").then((d) => showState(d.demoState()));
+    return;
+  }
   stateSource?.close();
   setLive("connecting", "Connecting");
   const src = new EventSource("/api/state");
   stateSource = src;
   src.addEventListener("state", (e) => {
     const next = JSON.parse((e as MessageEvent).data) as PhoneState;
-    if (!next.tabs) return;
-    state = next;
-    paint(next.theme);
-    banner.hidden = true;
-    setLive("live", "Live");
-    renderList();
+    if (next.tabs) showState(next);
   });
   src.onerror = async () => {
     setLive("connecting", "Reconnecting");
@@ -227,7 +300,7 @@ function measureCell(family: string) {
 
 function layoutTerm() {
   if (!term) return;
-  const width = termBox.clientWidth - 8;
+  const width = termBox.clientWidth;
   const fitted = Math.max(3, Math.min(14, Math.floor((width / (size.cols * cellRatio)) * 10) / 10));
   term.options.fontSize = fit ? fitted : Math.max(fitted, 11);
   zoom.textContent = fit ? "Zoom" : "Fit";
@@ -235,27 +308,25 @@ function layoutTerm() {
 }
 
 function termStatusFor(tab: PhoneTab, pane: PhonePane) {
-  termTitle.textContent = tab.title;
-  const a = pane.agent;
-  termStatus.replaceChildren();
-  if (a) {
-    termStatus.append($("span", `badge ${STATUS_CLASS[a.status] ?? "idle"}`, a.label));
-    if (a.detail) termStatus.append($("span", "term-detail", a.detail));
-  } else {
-    termStatus.append($("span", "term-detail", [pane.name, pane.cwd].filter(Boolean).join(" · ")));
-  }
+  termTitle.replaceChildren(layoutGlyph(tab), $("span", "tab-title", tab.title));
+  termTitle.style.setProperty("--group-color", tab.color);
+  const meta = paneMeta(pane);
+  meta.querySelectorAll(".meta-item").forEach((m) => m.classList.add("chip"));
+  if (pane.agent) meta.prepend(badge(pane.agent, false));
+  termStatus.replaceChildren(meta);
+  if (pane.agent?.detail) termStatus.append($("div", "term-detail", pane.agent.detail));
 }
 
-function openTerminal(pty: number, tab?: PhoneTab) {
+function openTerminal(pty: number) {
   closeTerminal(false);
   openPty = pty;
   const found = findPane(pty);
   if (found) termStatusFor(found.tab, found.pane);
-  else if (tab) termTitle.textContent = tab.title;
   list.hidden = true;
   bar.hidden = true;
+  banner.hidden = true;
   termView.hidden = false;
-  if (location.hash !== `#pty=${pty}`) history.pushState(null, "", `#pty=${pty}`);
+  if (location.hash !== `#pty=${pty}`) history.pushState(null, "", `${location.search}#pty=${pty}`);
 
   const family = getComputedStyle(document.documentElement).getPropertyValue("--code").trim();
   if (!cellRatio) measureCell(family);
@@ -265,23 +336,26 @@ function openTerminal(pty: number, tab?: PhoneTab) {
     scrollback: 3000,
     fontFamily: family,
     theme: state?.theme.term,
-    allowProposedApi: false,
   });
   term.open(termHost);
   // Scrolling and selecting still work; keystrokes go nowhere.
   term.textarea?.setAttribute("readonly", "");
   term.textarea?.setAttribute("inputmode", "none");
 
-  const src = new EventSource(`/api/pty/${pty}`);
-  termSource = src;
-  src.addEventListener("snapshot", (e) => {
-    const snap = JSON.parse((e as MessageEvent).data) as { cols: number; rows: number; data: string };
+  const showSnapshot = (snap: { cols: number; rows: number; data: string }) => {
     size = { cols: snap.cols, rows: snap.rows };
     term!.reset();
     term!.resize(snap.cols, snap.rows);
     layoutTerm();
     term!.write(snap.data);
-  });
+  };
+  if (demo) {
+    void import("./demo").then((d) => showSnapshot(d.demoScreen(found?.pane ?? null)));
+    return;
+  }
+  const src = new EventSource(`/api/pty/${pty}`);
+  termSource = src;
+  src.addEventListener("snapshot", (e) => showSnapshot(JSON.parse((e as MessageEvent).data)));
   src.addEventListener("data", (e) => term?.write(decode((e as MessageEvent).data)));
   src.addEventListener("resize", (e) => {
     size = JSON.parse((e as MessageEvent).data);
@@ -289,7 +363,7 @@ function openTerminal(pty: number, tab?: PhoneTab) {
     layoutTerm();
   });
   src.addEventListener("exit", () => {
-    termStatus.replaceChildren($("span", "term-detail", "This terminal closed."));
+    termStatus.replaceChildren($("div", "term-detail", "This terminal closed."));
     src.close();
   });
 }
@@ -303,7 +377,7 @@ function closeTerminal(navigate = true) {
   termView.hidden = true;
   list.hidden = false;
   bar.hidden = false;
-  if (navigate && location.hash) history.pushState(null, "", location.pathname);
+  if (navigate && location.hash) history.pushState(null, "", location.pathname + location.search);
 }
 
 back.addEventListener("click", () => closeTerminal());
@@ -353,7 +427,7 @@ function showSheet(title: string, body: string, actions: { label: string; run?: 
   const msg = $("p", "sheet-body", body);
   const buttons = $("div", "sheet-actions");
   for (const a of actions) {
-    const b = $<HTMLButtonElement>("button", a.primary ? "primary" : "", a.label);
+    const b = $<HTMLButtonElement>("button", a.primary ? "sheet-button primary" : "sheet-button", a.label);
     b.addEventListener("click", async () => {
       if (!a.run) return void (sheet.hidden = true);
       b.disabled = true;
@@ -413,7 +487,7 @@ bell.addEventListener("click", async () => {
   ]);
 });
 
-if ("serviceWorker" in navigator) {
+if ("serviceWorker" in navigator && !demo) {
   void navigator.serviceWorker.register("/phone-sw.js").then(syncBell, () => {});
   // A tapped notification, with the app already open.
   navigator.serviceWorker.addEventListener("message", (e) => {

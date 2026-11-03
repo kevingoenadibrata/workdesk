@@ -34,6 +34,8 @@ export interface PhoneTab {
   color: string;
   group: string | null;
   active: boolean;
+  /** Panes per column, left to right, to draw the tab's layout like the sidebar does. */
+  columns: number[];
   panes: PhonePane[];
 }
 
@@ -41,7 +43,7 @@ export interface PhoneTab {
 export interface PhoneState {
   /** Workdesk is in front, so notifications wait. */
   focused: boolean;
-  theme: { bg: string; fg: string; accent: string; danger: string; light: boolean; term: ITheme };
+  theme: { bg: string; fg: string; accent: string; danger: string; light: boolean; term: ITheme; groups: Record<string, string> };
   tabs: PhoneTab[];
 }
 
@@ -83,6 +85,7 @@ export function feedPhone(ws: Workspace, monitor: AgentMonitor) {
         color: (c ? styles.getPropertyValue(`--group-${c}`) : "").trim() || t.accent,
         group: group?.name ?? null,
         active: ws.activeTab === tab,
+        columns: tab.columns.map((c) => c.length),
         panes: tab.sessions.map((s): PhonePane => {
           const a = agents.get(s);
           const url = (s as { url?: string }).url;
@@ -110,7 +113,7 @@ export function feedPhone(ws: Workspace, monitor: AgentMonitor) {
     });
     return {
       focused: document.hasFocus(),
-      theme: { bg: t.bg, fg: t.fg, accent: t.accent, danger: t.danger, light: t.light, term: t.term },
+      theme: { bg: t.bg, fg: t.fg, accent: t.accent, danger: t.danger, light: t.light, term: t.term, groups: t.groups },
       tabs,
     };
   };
