@@ -1,7 +1,7 @@
 import "./home.css";
 import { invoke } from "@tauri-apps/api/core";
 import { Page, el } from "./page";
-import { ArrowRight, ArrowUpRight, Bot, Camera, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Search, Settings, Smartphone, Trash2, X, icon } from "./icons";
+import { ArrowRight, ArrowUpRight, Bot, Camera, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Monitor, Search, Settings, Smartphone, Trash2, X, icon } from "./icons";
 import { botSvg, type BotFace } from "./bot";
 import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
@@ -658,14 +658,15 @@ export class HomePage extends Page {
     root.addEventListener("click", () => this.source.openPhoneSettings());
     const qr = el("span", "home-phone-qr");
     const lights = el("span", "home-phone-lights");
-    const light = (name: string) => {
+    // No words: a device's icon and its light; the tooltip says the rest.
+    const light = (glyph: typeof Monitor) => {
       const row = el("span", "home-phone-light");
-      row.append(el("span", "home-phone-dot"), el("span", "home-phone-name", name), el("span", "home-phone-state"));
+      row.append(icon(glyph, 18), el("span", "home-phone-dot"));
       lights.append(row);
       return row;
     };
-    const desktop = light("Desktop");
-    const phone = light("Phone");
+    const desktop = light(Monitor);
+    const phone = light(Smartphone);
     root.append(qr, lights);
     this.phoneCard = { root, qr, desktop, phone };
     this.shownPhone = "";
@@ -695,13 +696,14 @@ export class HomePage extends Page {
     const key = JSON.stringify([desktopOn, online.length, desktopState, phoneState, url, s?.on]);
     if (key === this.shownPhone) return;
     this.shownPhone = key;
-    const set = (row: HTMLElement, on: boolean, state: string) => {
+    const set = (row: HTMLElement, on: boolean, label: string) => {
       row.classList.toggle("on", on);
       row.classList.toggle("off", !!s && !on);
-      row.querySelector(".home-phone-state")!.textContent = state;
+      row.title = label;
+      row.setAttribute("aria-label", label);
     };
-    set(card.desktop, desktopOn, desktopState);
-    set(card.phone, online.length > 0, phoneState);
+    set(card.desktop, desktopOn, `Desktop: ${desktopState}`);
+    set(card.phone, online.length > 0, `Phone: ${phoneState}`);
     card.root.title = url
       ? `Scan to open Workdesk on your phone: ${url}`
       : s?.on
@@ -710,7 +712,7 @@ export class HomePage extends Page {
     card.root.classList.toggle("mirror-off", !url);
     if (url !== this.qrFor) {
       this.qrFor = url;
-      if (!url) card.qr.replaceChildren(icon(Smartphone, 22));
+      if (!url) card.qr.replaceChildren();
       else
         void this.source.phone.qr(url).then(
           (svg) => {

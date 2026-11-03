@@ -1372,20 +1372,15 @@
 .home-phone-lights {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  gap: 12px;
 }
 .home-phone-light {
-  display: grid;
-  grid-template-columns: 7px auto;
-  column-gap: 7px;
+  display: flex;
   align-items: center;
-  line-height: 1.25;
+  gap: 8px;
+  color: var(--muted);
 }
 .home-phone-dot {
-  grid-row: span 2;
-  align-self: start;
-  margin-top: 4px;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -1396,17 +1391,6 @@
 }
 .home-phone-light.off .home-phone-dot {
   background: var(--danger);
-}
-.home-phone-name {
-  color: var(--text);
-  font-weight: 600;
-}
-.home-phone-state {
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--faint);
 }
 
 .home-drawer-backdrop {
