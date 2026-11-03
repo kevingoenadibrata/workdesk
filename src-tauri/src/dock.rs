@@ -19,6 +19,7 @@
 //! for everything else (minimized windows, a Dock moved to another display,
 //! auto-hide, the Dock moved to the left or right edge). Width changes animate.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -56,25 +57,55 @@ const POLL_MS: u64 = 500;
 /// After an app launches or quits, re-read at these delays (ms) to follow the
 /// Dock as it adds or removes the tile and animates.
 const FOLLOW_UP_MS: [u64; 4] = [0, 150, 400, 900];
+/// Bumped each time the cards open, so a timer from an earlier opening stops
+/// instead of running alongside the new one.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The app launch/quit observers are added once and outlive closing the cards.
+static WATCHING: AtomicBool = AtomicBool::new(false);
 
-/// Opens the cards beside the Dock. Must run on the main thread (from `setup`).
+/// Opens the cards beside the Dock, unless they're already open. Must run on
+/// the main thread.
 #[cfg(target_os = "macos")]
 pub fn open(app: &AppHandle) -> Result<(), String> {
     use tauri::Manager;
 
+    if app.get_webview_window(USAGE.0).is_some() {
+        return Ok(());
+    }
     for (label, hash) in CARDS {
-        card(app, label, hash)?;
+        if app.get_webview_window(label).is_none() {
+            card(app, label, hash)?;
+        }
     }
     place(app);
-    watch_apps(app);
+    if !WATCHING.swap(true, Ordering::SeqCst) {
+        watch_apps(app);
+    }
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_millis(POLL_MS));
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            break;
+        }
         let handle = app.clone();
         if app.get_webview_window(USAGE.0).is_none() || app.run_on_main_thread(move || place(&handle)).is_err() {
             break;
         }
     });
+    Ok(())
+}
+
+/// Closes the cards beside the Dock, if they're open, and stops their timer.
+pub fn close(app: &AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    for (label, _) in CARDS {
+        if let Some(window) = app.get_webview_window(label) {
+            window.destroy().map_err(|e| e.to_string())?;
+        }
+    }
     Ok(())
 }
 

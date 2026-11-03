@@ -4299,6 +4299,16 @@ body.sidebar-collapsed:not(.sidebar-peek) #sidebar {
   width: 96px;
 }
 
+.surface-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.settings-toggle {
+  align-self: flex-start;
+}
+
 .agent-empty {
   display: flex;
   flex-direction: column;
@@ -5697,7 +5707,8 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   align-items: center;
   gap: 6px;
 }
-.diff-toggle {
+.diff-toggle,
+.settings-toggle {
   display: inline-flex;
   padding: 2px;
   border: 1px solid var(--border);
@@ -5705,6 +5716,7 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   background: var(--sunken);
 }
 .diff-toggle-option,
+.settings-toggle-option,
 .diff-icon-button,
 .diff-fold {
   display: inline-flex;
@@ -5721,11 +5733,13 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
   cursor: pointer;
 }
 .diff-toggle-option:hover,
+.settings-toggle-option:hover,
 .diff-icon-button:hover,
 .diff-fold:hover {
   color: var(--text);
 }
-.diff-toggle-option[aria-checked="true"] {
+.diff-toggle-option[aria-checked="true"],
+.settings-toggle-option[aria-checked="true"] {
   background: var(--raised);
   color: var(--text);
   box-shadow: 0 1px 3px rgb(0 0 0 / calc(0.25 * var(--shadow-k)));
