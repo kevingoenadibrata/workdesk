@@ -3581,6 +3581,16 @@ body.sidebar-collapsed.show-hints:not(.sidebar-peek) #sidebar .tip {
   gap: 8px;
   min-width: 0;
 }
+/* About as big as the limit's logo under it, and lined up with it. */
+.home-row-head .monitor-badge {
+  margin-left: auto;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  font-size: 9px;
+  line-height: 13px;
+}
 /* The 5-hour limit of the harness Home's usage card shows. */
 .home-row-limit {
   display: flex;
