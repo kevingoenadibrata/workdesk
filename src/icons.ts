@@ -9,6 +9,7 @@ export {
   ArrowRight,
   AtSign,
   Bot,
+  Camera,
   CaseSensitive,
   Check,
   CircleAlert,

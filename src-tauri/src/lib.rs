@@ -11,6 +11,7 @@ mod notch;
 mod onboarding;
 mod pty;
 mod servers;
+mod shottr;
 mod tickets;
 mod usage;
 mod worktrees;
@@ -121,6 +122,7 @@ pub fn run() {
             if let Err(e) = dock::open(app.handle()) {
                 eprintln!("dock: {e}");
             }
+            shottr::start(app.handle());
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -159,6 +161,9 @@ pub fn run() {
             notch::notch_jump,
             notch::notch_action,
             dock::dock_drop,
+            shottr::shottr_installed,
+            shottr::shottr_grab,
+            shottr::shottr_ticket,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

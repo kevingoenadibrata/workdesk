@@ -411,8 +411,6 @@ fn place_card(app: &AppHandle, label: &str, rect: Option<objc2_foundation::NSRec
 /// composer with them in the description.
 #[tauri::command]
 pub fn dock_drop(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
-    use tauri::{Emitter, Manager};
-
     let mut lines = Vec::new();
     for path in &paths {
         let p = std::path::Path::new(path);
@@ -425,12 +423,20 @@ pub fn dock_drop(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
             lines.push(format!("[{name}](<{path}>)"));
         }
     }
+    open_composer(&app, &lines.join("\n"))
+}
+
+/// Brings Workdesk forward and has the main window open the New ticket
+/// composer with `seed` in the description.
+pub fn open_composer(app: &AppHandle, seed: &str) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
     }
-    app.emit_to("main", "dock-new-ticket", lines.join("\n")).map_err(|e| e.to_string())
+    app.emit_to("main", "dock-new-ticket", seed).map_err(|e| e.to_string())
 }
 
 /// The Dock's exact frame through the Accessibility API, which the Dock answers

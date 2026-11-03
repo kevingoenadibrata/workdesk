@@ -1,9 +1,10 @@
 import "./styles.css";
 import "./dock.css";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { loadTheme } from "./themes";
-import { FileUp, TicketPlus, icon } from "./icons";
+import { Camera, FileUp, TicketPlus, icon } from "./icons";
 import { harnessLogo } from "./harnessLogos";
 import { windowLabel, windowSummary, type Usage } from "./usage";
 
@@ -13,11 +14,15 @@ import { windowLabel, windowSummary, type Usage } from "./usage";
 //   with when it resets;
 // - ticket: a button opening the New ticket composer in Workdesk;
 // - drop: files dropped on it open the composer with them in the description.
+//   Right after Shottr copies a screenshot (src-tauri/src/shottr.rs), it offers
+//   to start a ticket from it for a while.
 
 loadTheme();
 const card = location.hash.slice(1) || "usage";
 /** How often to re-read usage; reading is just files, never a ping. */
 const USAGE_MS = 60_000;
+/** How long the drop zone offers a ticket from a Shottr screenshot. */
+const SHOT_OFFER_MS = 20_000;
 
 const panel = document.createElement("div");
 panel.className = `dock-panel dock-${card}`;
@@ -78,6 +83,32 @@ function dropCard() {
     panel.classList.toggle("over", over);
     text.textContent = over ? "Release to start a ticket" : idle;
   };
+
+  // A Shottr screenshot was just copied: the zone becomes a button for a while.
+  const offer = document.createElement("button");
+  offer.className = "dock-action dock-shot";
+  const offerText = document.createElement("span");
+  offer.append(icon(Camera, 18), offerText);
+  let offerTimer = 0;
+  const endOffer = () => {
+    clearTimeout(offerTimer);
+    offer.replaceWith(hint);
+  };
+  offer.onclick = () => {
+    clearTimeout(offerTimer);
+    offerText.textContent = "Opening…";
+    invoke("shottr_ticket").catch((e) => {
+        offerText.textContent = String(e);
+        offerTimer = window.setTimeout(endOffer, 3000);
+      });
+  };
+  void listen("shottr-shot", () => {
+    clearTimeout(offerTimer);
+    offerText.textContent = "Ticket from screenshot";
+    if (hint.isConnected) hint.replaceWith(offer);
+    offerTimer = window.setTimeout(endOffer, SHOT_OFFER_MS);
+  });
+  void listen("shottr-taken", endOffer);
   void getCurrentWebview().onDragDropEvent(({ payload }) => {
     if (payload.type === "enter" || payload.type === "over") setOver(true);
     else if (payload.type === "leave") setOver(false);

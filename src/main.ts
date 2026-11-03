@@ -124,6 +124,15 @@ feedNotch(monitor, {
 // Files dropped on the drop zone beside the Dock (src-tauri/src/dock.rs): the
 // composer opens with them in the description. Workdesk is already in front.
 void listen<string>("dock-new-ticket", ({ payload }) => homePage.newTicket(payload));
+// Shottr just copied a screenshot (src-tauri/src/shottr.rs): offer a ticket from it.
+void listen("shottr-shot", () =>
+  showToast("Screenshot from Shottr", 12_000, {
+    label: "New ticket",
+    run: () => void invoke("shottr_ticket").catch((e) => showToast(String(e), 0, undefined, { error: true })),
+  }),
+);
+// Taken, here or on the Dock's drop zone: the offer goes (a toast replaces any showing).
+void listen("shottr-taken", () => showToast("Screenshot added to the ticket"));
 
 /**
  * Asks which folder's repo to start `branch` in (Teleport, folders only),
