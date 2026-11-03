@@ -6,7 +6,7 @@ import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
-import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, isSavedImage, savedImages } from "./tickets";
+import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, savedImageHook, savedImages } from "./tickets";
 import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
@@ -37,8 +37,11 @@ export interface HomeSource {
   /** Local web servers, running and recently stopped. */
   servers(): Server[];
   onChange(fn: () => void): void;
-  /** Makes a worktree for the ticket and starts Claude on it; resolves "" if cancelled. */
-  handOver(ticket: Ticket, branch: string): Promise<string>;
+  /**
+   * Makes a worktree for the ticket and starts Claude on it; resolves "" if cancelled.
+   * `askRepo` asks which repo even when one is remembered for the ticket's project.
+   */
+  handOver(ticket: Ticket, branch: string, askRepo?: boolean): Promise<string>;
   /** Checks out the ticket's branch in a repo the user picks (no agent). */
   startBranch(ticket: Ticket, branch: string): Promise<string>;
   /** Goes to the session's pane, or picks it back up in a new one. */
@@ -209,8 +212,8 @@ export class HomePage extends Page {
   private cards = new Map<string, { sig: string; el: HTMLElement }>();
   /** The page's scroller. */
   private scroller: HTMLElement | null = null;
-  /** What the filter button, chips and errors last showed, so they're only redrawn when that changes. */
-  private shown = { filter: "", chips: "", errors: "", selection: "" };
+  /** What the filter button and errors last showed, so they're only redrawn when that changes. */
+  private shown = { filter: "", errors: "", selection: "" };
   private els: {
     backlogCount: HTMLElement;
     agentCount: HTMLElement;
@@ -218,7 +221,6 @@ export class HomePage extends Page {
     tools: HTMLElement;
     filter: HTMLButtonElement;
     reload: HTMLButtonElement;
-    chips: HTMLElement;
     errors: HTMLElement;
     selection: HTMLElement;
     backlog: HTMLElement;
@@ -285,24 +287,24 @@ export class HomePage extends Page {
     side.append(usage.root, this.serversTile);
     head.append(text, side);
 
-    const lane = (key: string, name: string, last = false) => {
+    const lane = (key: string, name: string) => {
       const section = el("section", "home-lane");
       section.dataset.lane = key;
       const h = el("h2", "home-lane-head");
       const count = el("span", "home-lane-count");
       const rule = el("span", "home-lane-rule");
-      if (!last) rule.append(icon(ArrowRight, 12));
       h.append(el("span", "home-lane-name", name), count, rule);
       section.append(h);
-      return { section, count };
+      return { section, count, head: h };
     };
     const backlog = lane("backlog", "Backlog");
-    const agents = lane("agents", "With an agent");
-    const pulls = lane("pulls", "Pull requests", true);
+    const agents = lane("agents", "Agents");
+    const pulls = lane("pulls", "Pull requests");
 
     // The backlog's search and filters stay put while its list redraws.
+    // One field, with the Filter button at its end; active filters show in its menu.
     const tools = el("div", "home-tools");
-    const search = el("label", "home-search");
+    const search = el("div", "home-search");
     const input = el("input", "");
     input.type = "search";
     input.placeholder = "Search tickets";
@@ -314,32 +316,42 @@ export class HomePage extends Page {
       this.page = 0;
       this.renderBacklog();
     });
-    search.append(icon(Search, 13), input);
     const filter = el("button", "home-filter");
     filter.title = "Filter the backlog";
     filter.setAttribute("aria-haspopup", "dialog");
     filter.addEventListener("click", () => this.openFilters(filter));
+    search.append(icon(Search, 13), input, filter);
+    // A click on the field's bare background types into it, as a label would.
+    search.addEventListener("mousedown", (ev) => {
+      if (ev.target !== search) return;
+      ev.preventDefault();
+      input.focus();
+    });
+    tools.append(search);
+
+    // Refresh and New ride on the lane's heading, out of the search's way.
     const reload = el("button", "home-reload");
     reload.title = "Refresh the backlog";
     reload.setAttribute("aria-label", "Refresh the backlog");
-    reload.append(icon(RotateCcw, 13));
+    reload.append(icon(RotateCcw, 12));
     reload.addEventListener("click", () => this.source.refresh(true));
     const write = el("button", "home-write");
     write.title = "Write a ticket in Workdesk, GitHub or ClickUp";
     write.setAttribute("aria-label", "New ticket");
     const writeHint = el("span", "hold-hint");
     writeHint.append(kbdFor("newTicket"));
-    write.append(icon(Plus, 14), "New", writeHint);
+    write.append(icon(Plus, 12), "New", writeHint);
     write.addEventListener("click", () => this.openComposer());
-    tools.append(search, filter, reload, write);
-    const chips = el("div", "home-chips");
+    const actions = el("span", "home-lane-actions");
+    actions.append(reload, write);
+    backlog.head.append(actions);
     const errors = el("div", "home-errors");
     const selection = el("div", "home-selection");
     selection.hidden = true;
     const backlogList = el("div", "home-list");
     const pager = el("div", "home-pager");
     pager.hidden = true;
-    backlog.section.append(tools, chips, errors, selection, backlogList, pager);
+    backlog.section.append(tools, errors, selection, backlogList, pager);
     const agentBox = el("div", "home-lane-body");
     agents.section.append(agentBox);
     const pullBox = el("div", "home-lane-body");
@@ -351,7 +363,7 @@ export class HomePage extends Page {
     root.append(head, empty, lanes);
     body.append(root);
     this.scroller = body.parentElement;
-    this.shown = { filter: "", chips: "", errors: "", selection: "" };
+    this.shown = { filter: "", errors: "", selection: "" };
 
     this.els = {
       backlogCount: backlog.count,
@@ -360,7 +372,6 @@ export class HomePage extends Page {
       tools,
       filter,
       reload,
-      chips,
       errors,
       selection,
       backlog: backlogList,
@@ -703,11 +714,11 @@ export class HomePage extends Page {
     const n = this.activeCount();
     if (this.shown.filter !== String(n)) {
       this.shown.filter = String(n);
-      e.filter.replaceChildren(icon(ListFilter, 14), "Filter");
+      e.filter.replaceChildren(icon(ListFilter, 13));
       if (n) e.filter.append(el("span", "home-filter-count", String(n)));
+      e.filter.setAttribute("aria-label", n ? `Filter the backlog, ${n} on` : "Filter the backlog");
       e.filter.classList.toggle("active", n > 0);
     }
-    this.renderChips();
 
     const errorsKey = errors.map((x) => `${x.provider}\0${x.error}`).join("\n");
     if (this.shown.errors !== errorsKey) this.renderErrors(errors, errorsKey);
@@ -882,7 +893,7 @@ export class HomePage extends Page {
 
     const desc = el("div", "home-modal-desc");
     const body = t.body?.trim();
-    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url), (src, alt) => (isSavedImage(src) ? this.savedImage(src, alt) : null)));
+    if (body) desc.append(...markdown(body, (url) => this.source.openUrl(url), savedImageHook((path) => this.source.reveal(path))));
     else desc.append(el("p", "home-modal-none", "No description."));
 
     const foot = el("div", "home-modal-foot");
@@ -950,25 +961,6 @@ export class HomePage extends Page {
   }
 
   private closeTicket: ((refocus?: boolean) => void) | null = null;
-
-  /** An image pasted into one of Workdesk's own tickets, read from disk; clicking shows it in Finder. */
-  private savedImage(path: string, alt: string): HTMLElement {
-    const name = path.split("/").pop() ?? path;
-    const b = el("button", "home-modal-image");
-    b.title = `${path}\nClick to show it in Finder`;
-    const img = el("img", "");
-    img.alt = alt || name;
-    b.append(img);
-    b.addEventListener("click", () => this.source.reveal(path));
-    ticketImages.url(path).then(
-      (url) => {
-        img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
-        img.src = url;
-      },
-      () => b.replaceChildren(el("span", "home-modal-image-gone", `Image not found: ${name}`)),
-    );
-    return b;
-  }
 
   // ---- writing a ticket ----
 
@@ -1043,7 +1035,7 @@ export class HomePage extends Page {
     handBox.type = "checkbox";
     handBox.checked = memory.hand;
     const handLabel = el("label", "home-compose-handto");
-    handLabel.title = "Once it's written, make a worktree for it and start a Claude session on it";
+    handLabel.title = "Once it's written, pick its repo, make a worktree for it and start a Claude session on it";
     handLabel.append(handBox, icon(Bot, 13), "Hand to Claude");
     const left = el("div", "home-compose-left");
     left.append(...(editing ? [] : [handLabel]), hint);
@@ -1240,7 +1232,8 @@ export class HomePage extends Page {
           this.showFlash(p === "workdesk" ? `Wrote ${ticket.id}` : `Created ${ticket.id} in ${ticket.project || providerName(p)}`);
           const card = this.backlogCardFor(ticket);
           card?.scrollIntoView({ block: "nearest" });
-          if (hand) void this.handOver(ticket, card);
+          // A ticket just written could be for any repo: ask, starting on the remembered one.
+          if (hand) void this.handOver(ticket, card, false, true);
           else card?.classList.add("arrived");
         },
         (err) => {
@@ -1252,6 +1245,11 @@ export class HomePage extends Page {
       );
     });
     title.focus();
+    // WebKit doesn't draw the caret of a field focused while its modal is still fading and rising
+    // in (typing works, the cursor stays invisible), so seat it again once the modal has landed.
+    modal.addEventListener("animationend", (e) => {
+      if (e.target === modal) reseatCaret(modal);
+    });
   }
 
   // ---- picking several tickets ----
@@ -1342,12 +1340,12 @@ export class HomePage extends Page {
   /**
    * Hands `t` to Claude; once its session shows up, the card (if it's showing)
    * flies over to the agent lane. `quiet` leaves the success message to the
-   * batch it's part of.
+   * batch it's part of; `askRepo` asks which repo even if one is remembered.
    */
-  private handOver(t: Ticket, card: HTMLElement | null, quiet = false): Promise<"started" | "cancelled" | "failed"> {
+  private handOver(t: Ticket, card: HTMLElement | null, quiet = false, askRepo = false): Promise<"started" | "cancelled" | "failed"> {
     const from = card?.getBoundingClientRect();
     card?.classList.add("busy");
-    return this.source.handOver(t, branchName(t)).then(
+    return this.source.handOver(t, branchName(t), askRepo).then(
       (msg) => {
         card?.classList.remove("busy");
         if (!msg) return "cancelled";
@@ -1361,7 +1359,7 @@ export class HomePage extends Page {
       (e) => {
         card?.classList.remove("busy");
         // Try again from the ticket's card as it is by then.
-        const retry = () => void this.handOver(t, this.backlogCardFor(t) ?? card);
+        const retry = () => void this.handOver(t, this.backlogCardFor(t) ?? card, false, askRepo);
         this.showFlash(quiet ? `${t.id}: ${e}` : String(e), true, this.actionFixes(String(e), retry));
         return "failed";
       },
@@ -1394,18 +1392,18 @@ export class HomePage extends Page {
     setTimeout(done, 800);
   }
 
-  private renderChips() {
-    const box = this.els!.chips;
+  /** A removable chip per active filter, for the top of the filter menu; `then` runs after one's removed. */
+  private filterChips(then: () => void): HTMLElement[] {
     const f = this.filters;
-    const key = JSON.stringify(f);
-    if (this.shown.chips === key) return;
-    this.shown.chips = key;
-    const chip = (label: Node | string, remove: () => void, prefix?: string) => {
+    const chip = (label: Node | string, remove: Partial<Filters>, prefix?: string) => {
       const c = el("button", "home-chip");
       c.title = "Remove this filter";
       if (prefix) c.append(el("span", "home-chip-key", prefix));
       c.append(label, icon(X, 11));
-      c.addEventListener("click", remove);
+      c.addEventListener("click", () => {
+        this.setFilters(remove);
+        then();
+      });
       return c;
     };
     const parts: HTMLElement[] = [];
@@ -1413,19 +1411,13 @@ export class HomePage extends Page {
       const l = el("span", "home-chip-logo");
       l.innerHTML = logo(p, 11);
       l.append(providerName(p));
-      parts.push(chip(l, () => this.setFilters({ sources: f.sources.filter((x) => x !== p) })));
+      parts.push(chip(l, { sources: f.sources.filter((x) => x !== p) }));
     }
-    for (const p of f.projects) parts.push(chip(p, () => this.setFilters({ projects: f.projects.filter((x) => x !== p) }), "Project"));
+    for (const p of f.projects) parts.push(chip(p, { projects: f.projects.filter((x) => x !== p) }, "Project"));
     const names = new Map(this.source.tickets().tickets.map((t) => [statusKey(t), t.status]));
-    for (const k of f.statuses) parts.push(chip(names.get(k) ?? k, () => this.setFilters({ statuses: f.statuses.filter((x) => x !== k) }), "Status"));
-    if (f.within !== "any") parts.push(chip(WITHIN.find(([w]) => w === f.within)![1], () => this.setFilters({ within: "any" }), "Updated"));
-    if (parts.length > 1) {
-      const clear = el("button", "home-chip-clear", "Clear all");
-      clear.addEventListener("click", () => this.setFilters({ sources: [], projects: [], statuses: [], within: "any" }));
-      parts.push(clear);
-    }
-    box.replaceChildren(...parts);
-    box.hidden = parts.length === 0;
+    for (const k of f.statuses) parts.push(chip(names.get(k) ?? k, { statuses: f.statuses.filter((x) => x !== k) }, "Status"));
+    if (f.within !== "any") parts.push(chip(WITHIN.find(([w]) => w === f.within)![1], { within: "any" }, "Updated"));
+    return parts;
   }
 
   /** The filter menu: source, status, project and when it was updated, each option with how many tickets it leaves. */
@@ -1506,7 +1498,12 @@ export class HomePage extends Page {
       const right = el("div", "");
       right.append(statuses, projects);
       cols.append(left, right);
-      menu.replaceChildren(cols, foot);
+      const active = this.filterChips(draw);
+      if (active.length) {
+        const chips = el("div", "home-chips");
+        chips.append(...active);
+        menu.replaceChildren(chips, cols, foot);
+      } else menu.replaceChildren(cols, foot);
     };
     draw();
     anchor.after(menu);
@@ -1891,13 +1888,15 @@ export class HomeRow {
     // The icon sits on the title's line, so the limit starts under it.
     const head = el("span", "home-row-head");
     head.append(glyph, el("span", "tab-title", "Home"));
-    text.append(head, line);
-    row.append(text);
+    // The count of agents that need you sits at the title line's far right,
+    // right above the limit's logo.
     if (attention.length) {
       const badge = el("span", "monitor-badge", String(attention.length));
       if (error) badge.classList.add("error");
-      row.append(badge);
+      head.append(badge);
     }
+    text.append(head, line);
+    row.append(text);
     row.append(hint);
     // Clicking it while Home is open keeps you there.
     row.addEventListener("click", (e) => {
@@ -1905,5 +1904,17 @@ export class HomeRow {
       this.page.open();
     });
     this.slot.replaceChildren(row);
+  }
+}
+
+/** Blurs and refocuses the text field focused inside `root`, keeping its selection, so WebKit draws its caret. */
+function reseatCaret(root: HTMLElement) {
+  const field = document.activeElement;
+  if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) || !root.contains(field)) return;
+  const { selectionStart, selectionEnd, selectionDirection } = field;
+  field.blur();
+  field.focus({ preventScroll: true });
+  if (selectionStart !== null && selectionEnd !== null) {
+    field.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
   }
 }

@@ -2,7 +2,7 @@ import "./home.css";
 import { el } from "./page";
 import { markdown } from "./markdown";
 import { providerLogo } from "./providerLogos";
-import { ago, providerName, updatedAt, type Ticket } from "./tickets";
+import { ago, providerName, savedImageHook, updatedAt, type Ticket } from "./tickets";
 import { ExternalLink, GitBranch, Send, Ticket as TicketIcon, Unlink, X, icon } from "./icons";
 
 /** What the ticket panel shows, and what its buttons do. */
@@ -16,6 +16,8 @@ export interface TicketView {
   change(anchor: HTMLElement): void;
   detach(): void;
   openUrl(url: string): void;
+  /** Shows a file (a ticket's pasted image) in Finder. */
+  revealFile(path: string): void;
 }
 
 const WIDTH_KEY = "workdesk.ticketPanel.width";
@@ -129,7 +131,7 @@ export class TicketSheet {
     meta.append(br);
     const desc = el("div", "home-modal-desc ticket-sheet-desc");
     const body = t.body?.trim();
-    if (body) desc.append(...markdown(body, view.openUrl));
+    if (body) desc.append(...markdown(body, view.openUrl, savedImageHook(view.revealFile)));
     else desc.append(el("p", "home-modal-none", t.status ? "No description." : "Not in your ticket list, so there's no description to show."));
     scroll.append(title, meta, desc);
 

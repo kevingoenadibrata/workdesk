@@ -190,7 +190,7 @@
   }
 }
 
-/* The lane's name and count, on a rule that points at the next lane. */
+/* The lane's name and count, on a plain rule. */
 .home-lane-head {
   display: flex;
   align-items: center;
@@ -212,22 +212,8 @@
 }
 .home-lane-rule {
   flex: 1;
-  display: flex;
-  align-items: center;
   min-width: 16px;
-  color: var(--faint);
-}
-.home-lane-rule::before {
-  content: "";
-  flex: 1;
   height: 1px;
-  background: var(--border);
-  background: linear-gradient(to right, var(--border), color-mix(in srgb, var(--text) 18%, transparent));
-}
-.home-lane-rule svg {
-  margin-left: -3px;
-}
-.home-lane[data-lane="pulls"] .home-lane-rule::before {
   background: var(--border);
 }
 
@@ -375,89 +361,41 @@
 
 /* ---- backlog ---- */
 
-.home-tools {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.home-search {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--sunken);
-  box-shadow: inset 0 0 0 1px var(--border);
-  color: var(--faint);
-}
-.home-search:focus-within {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-.home-search input:focus-visible {
-  outline: none;
-}
-.home-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-}
-.home-tools {
-  position: relative;
-}
-.home-filter {
+/* Refresh and New, on the backlog lane's heading after its arrow. */
+.home-lane-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 10px;
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--border);
-  color: var(--muted);
-  font-size: 12px;
+  gap: 2px;
+  margin-left: 4px;
 }
-.home-filter:hover,
-.home-filter.open {
-  color: var(--text);
-  background: var(--hover);
-}
-.home-filter.active {
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.home-filter-count {
-  display: grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-family: var(--code);
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.home-reload {
+.home-reload,
+.home-write {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  box-shadow: inset 0 0 0 1px var(--border);
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  border-radius: 6px;
   color: var(--muted);
 }
-.home-reload:hover {
+.home-reload {
+  justify-content: center;
+  width: 22px;
+}
+.home-write {
+  gap: 4px;
+  padding: 0 7px 0 5px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.home-reload:hover,
+.home-write:hover {
   color: var(--text);
   background: var(--hover);
+}
+.home-write:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .home-reload.spinning {
   color: var(--accent);
@@ -476,26 +414,94 @@
   }
 }
 
-/* Active filters, each removable. */
+/* One search field holding the active filters as chips and the Filter button. */
+.home-tools {
+  position: relative;
+  margin-bottom: 10px;
+}
+.home-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 3px 3px 3px 10px;
+  border-radius: 8px;
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--faint);
+  cursor: text;
+}
+.home-search:focus-within {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.home-search input:focus-visible {
+  outline: none;
+}
+.home-search input {
+  flex: 1;
+  min-width: 90px;
+  height: 24px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+}
+.home-filter {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: default;
+}
+.home-filter:hover,
+.home-filter.open {
+  color: var(--text);
+  background: var(--hover);
+}
+.home-filter.active {
+  color: var(--accent);
+}
+.home-filter-count {
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Active filters, each removable, along the top of the filter menu. */
 .home-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.home-chips[hidden] {
-  display: none;
+  gap: 4px;
+  padding: 4px 4px 8px;
+  border-bottom: 1px solid var(--border);
 }
 .home-chip {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 6px 0 9px;
-  border-radius: 12px;
+  gap: 5px;
+  height: 22px;
+  padding: 0 5px 0 8px;
+  border-radius: 11px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--text);
   font-size: 11.5px;
+  cursor: default;
 }
 .home-chip svg {
   color: var(--muted);
@@ -512,10 +518,11 @@
   gap: 5px;
 }
 .home-chip-clear {
-  height: 24px;
-  padding: 0 6px;
+  height: 22px;
+  padding: 0 4px;
   color: var(--muted);
   font-size: 11.5px;
+  cursor: default;
 }
 .home-chip-clear:hover:not(:disabled) {
   color: var(--text);
@@ -531,6 +538,8 @@
   top: calc(100% + 6px);
   right: 0;
   z-index: 20;
+  color: var(--text);
+  cursor: default;
   width: min(460px, 100%);
   min-width: 300px;
   padding: 6px;
@@ -1428,29 +1437,8 @@
 
 /* ---- writing a ticket ---- */
 
-.home-write {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 11px 0 9px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 12px;
-  font-weight: 600;
-}
-.home-write:hover {
-  background: color-mix(in srgb, var(--accent) 88%, var(--text));
-}
-.home-write:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 .home-write .hold-hint .kbd {
-  color: var(--on-accent);
-  background: color-mix(in srgb, var(--on-accent) 18%, transparent);
+  margin-left: 2px;
 }
 .home-compose {
   width: 600px;

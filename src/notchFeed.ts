@@ -1,5 +1,5 @@
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { BADGE_LABELS, HARNESS_NAMES, faceOf, needsYou, type AgentMonitor } from "./monitor";
+import { BADGE_LABELS, HARNESS_NAMES, agentTask, faceOf, needsYou, type AgentMonitor } from "./monitor";
 import type { AgentStatus } from "./pty";
 import type { BotFace } from "./bot";
 
@@ -40,7 +40,7 @@ export function feedNotch(monitor: AgentMonitor, actions: NotchActions) {
         harness: HARNESS_NAMES[a.harness],
         status: a.status,
         label: BADGE_LABELS[a.status],
-        detail: a.detail ?? a.prompt,
+        detail: a.detail ?? agentTask(a),
         color: a.color,
         face: faceOf(a, now),
         needsYou: needsYou(a),

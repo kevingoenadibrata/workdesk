@@ -6,6 +6,7 @@ mod dock;
 mod files;
 mod git;
 mod glow;
+mod keystop;
 mod notch;
 mod onboarding;
 mod pty;
@@ -15,7 +16,7 @@ mod usage;
 mod worktrees;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Menu item ids sent to the frontend as "menu" events.
 const LOADOUT_PREFIX: &str = "loadout:";
@@ -111,6 +112,9 @@ pub fn run() {
         .manage(browser::BrowserState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
+            if let Some(main) = app.get_webview("main") {
+                keystop::contain_keys(&main);
+            }
             if let Err(e) = notch::open(app.handle()) {
                 eprintln!("notch: {e}");
             }
