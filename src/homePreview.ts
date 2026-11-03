@@ -12,6 +12,7 @@ import type { PullRequest, Ticket } from "./tickets";
 import type { Provider } from "./providerLogos";
 import type { TermSession } from "./terminal";
 import type { Server } from "./servers";
+import type { PhoneStatus } from "./phoneSettings";
 
 const MIN = 60_000;
 /** Unix seconds, `min` minutes from now. */
@@ -160,6 +161,26 @@ const SERVERS: Server[] = [
   { key: "http://localhost:6006", session: session("/Users/me/Projects/app"), tabTitle: "ENG-421", color: "var(--group-purple)", scheme: "http", host: "localhost", port: 6006, live: false, name: "storybook", since: Date.now() - 12 * MIN },
 ];
 
+// ?phone=off|mac|both: the mirror off, on with no phone online, or on with one.
+const phoneMode = new URLSearchParams(location.search).get("phone") ?? "both";
+const PHONE: PhoneStatus = {
+  on: phoneMode !== "off",
+  installed: true,
+  node: {
+    state: phoneMode === "off" ? "Stopped" : "Running",
+    login: phoneMode === "off" ? null : "me@example.com",
+    host: "mac.tail1234.ts.net",
+    https: true,
+    phones: [{ name: "iPhone", os: "iOS", online: phoneMode === "both", lastSeen: null }],
+  },
+  url: phoneMode === "off" ? null : "https://mac.tail1234.ts.net:8443/",
+  serving: phoneMode !== "off",
+  taken: false,
+  viewers: [],
+  notifying: [],
+  error: null,
+};
+
 const color = (c: GroupColor) => `var(--group-${c})`;
 
 function agent(tab: string, harness: Agent["harness"], status: AgentStatus, c: GroupColor, cwd: string, ageMin: number, log: string[], prompt: string | null, from?: AgentStatus): Agent {
@@ -295,6 +316,13 @@ const source: HomeSource = {
   reveal: (path) => console.log("reveal", path),
   pullError: () => state.pullError ?? "",
   servers: () => SERVERS,
+  phone: {
+    status: async () => PHONE,
+    // A stand-in pattern; the real code comes from phone_qr.
+    qr: async () =>
+      `<svg viewBox="0 0 7 7" shape-rendering="crispEdges"><path d="M0 0h3v3H0zM4 0h3v3H4zM0 4h3v3H0zM4 4h1v1H4zM6 4h1v3H6zM4 6h1v1H4zM5 5h1v1H5z"/></svg>`,
+  },
+  openPhoneSettings: () => console.log("phone settings"),
   openServer: (server) => console.log("open", server.port),
   jumpToServer: () => console.log("jump to server's pane"),
   dismissServer: (key) => console.log("dismiss", key),

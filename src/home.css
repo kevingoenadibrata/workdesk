@@ -1280,7 +1280,7 @@
   display: flex;
   align-items: stretch;
   gap: 10px;
-  width: min(780px, 100%);
+  width: min(960px, 100%);
 }
 .home-side .home-limits {
   flex: 1;
@@ -1322,6 +1322,76 @@
 }
 .home-servers:not(.live) .home-servers-count {
   color: var(--muted);
+}
+
+/* The phone mirror's card, right of the servers: its QR code on top, and
+   under it a light each for this Mac and a phone being on Tailscale. */
+.home-phone {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  background: var(--card);
+  color: var(--muted);
+}
+.home-phone:hover {
+  background: color-mix(in srgb, var(--raised) 85%, var(--bg));
+  color: var(--text);
+}
+.home-phone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.home-phone-qr {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border-radius: 6px;
+  background: #fff;
+}
+.home-phone:not(.mirror-off) .home-phone-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* With the mirror off there's no code to scan: an empty tile. */
+.home-phone.mirror-off .home-phone-qr {
+  padding: 0;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--faint);
+}
+/* As wide as the QR code above: one light at each edge. */
+.home-phone-lights {
+  display: flex;
+  justify-content: space-between;
+  width: 64px;
+}
+.home-phone-light {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+}
+.home-phone-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.home-phone-light.on .home-phone-dot {
+  background: var(--live);
+}
+.home-phone-light.off .home-phone-dot {
+  background: var(--danger);
 }
 
 .home-drawer-backdrop {

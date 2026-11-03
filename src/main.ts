@@ -92,6 +92,7 @@ const homePage = new HomePage(
     },
     openUrl: (url) => void openUrl(url),
     openSettings: () => settings.showSubPage("integrations"),
+    openPhoneSettings: () => settings.showSubPage("phone"),
     openTab: (dir, command) => {
       Page.closeAll();
       ws.newTab(undefined, dir, command ? [command] : undefined);

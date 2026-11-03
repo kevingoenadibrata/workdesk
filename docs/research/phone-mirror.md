@@ -45,7 +45,9 @@ What this PR builds:
   Notifications fire on the Rust side when an agent goes to *waiting*, to
   *error*, or from working to *idle*. They only fire while Workdesk isn't in
   front.
-- **Settings → Phone** (`src/phoneSettings.ts`): the switch, Tailscale's
+- **Settings → Phone** (`src/phoneSettings.ts`): whether the mirror is on
+  (there's no switch since WD-27: it starts by itself every time Tailscale is
+  running and signed in), Tailscale's
   state (not installed / off / signed out / signed in as …), the address with
   a QR code, and your phones (online or last seen, watching, notifications).
 - **The phone app** (`phone.html`, `src/phone/`, `public/phone-*`): tab list

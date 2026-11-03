@@ -178,7 +178,6 @@ pub fn run() {
             shottr::shottr_ticket,
             shottr::shottr_preview,
             phone::phone_status,
-            phone::phone_enable,
             phone::phone_state,
             phone::phone_snapshot,
             phone::phone_qr,

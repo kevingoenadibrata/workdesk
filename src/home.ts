@@ -1,7 +1,7 @@
 import "./home.css";
 import { invoke } from "@tauri-apps/api/core";
 import { Page, el } from "./page";
-import { ArrowRight, ArrowUpRight, Bot, Camera, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Search, Settings, Trash2, X, icon } from "./icons";
+import { ArrowRight, ArrowUpRight, Bot, Camera, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Monitor, Search, Settings, Smartphone, Trash2, X, icon } from "./icons";
 import { botSvg, type BotFace } from "./bot";
 import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
@@ -13,6 +13,7 @@ import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
 import { ServerList, type LocalServers, type Server } from "./servers";
 import { kbdFor } from "./kbd";
+import { desktopOnTailscale, livePhone, phonesOnline, type PhoneSource, type PhoneStatus } from "./phoneSettings";
 import { markdown } from "./markdown";
 import type { TermSession } from "./terminal";
 
@@ -37,6 +38,8 @@ export interface HomeSource {
   usage: UsageSource;
   /** Local web servers, running and recently stopped. */
   servers(): Server[];
+  /** The phone mirror over Tailscale; Home polls it while it's showing. */
+  phone: PhoneSource;
   onChange(fn: () => void): void;
   /**
    * Makes a worktree for the ticket and starts Claude on it; resolves "" if cancelled.
@@ -54,6 +57,8 @@ export interface HomeSource {
   jumpTo(agent: Agent): void;
   openUrl(url: string): void;
   openSettings(): void;
+  /** Opens Settings → Phone. */
+  openPhoneSettings(): void;
   /** Opens a tab in `dir` (home if undefined), running `command` if given. */
   openTab(dir?: string, command?: string): void;
   /** Shows `path` in Finder. */
@@ -85,6 +90,8 @@ export interface TicketEdit {
 }
 
 const COMPOSE_KEY = "workdesk.newTicket";
+// Each poll runs the Tailscale CLI, so Home asks less often than Settings → Phone.
+const PHONE_POLL_MS = 8000;
 
 /** Whether Shottr (src-tauri/src/shottr.rs) is installed, asked once. */
 let shottr: Promise<boolean> | null = null;
@@ -252,6 +259,8 @@ export class HomePage extends Page {
   close() {
     clearTimeout(this.clockTimer);
     this.clock = null;
+    clearInterval(this.phoneTimer);
+    this.phoneCard = null;
     this.closeMenu?.();
     this.closeTicket?.(false);
     this.closeDrawer?.(false);
@@ -289,7 +298,7 @@ export class HomePage extends Page {
     this.serversTile = el("button", "home-servers");
     this.serversTile.addEventListener("click", () => this.openDrawer());
     this.shownServers = "";
-    side.append(usage.root, this.serversTile);
+    side.append(usage.root, this.serversTile, this.buildPhoneCard());
     head.append(text, side);
 
     const lane = (key: string, name: string) => {
@@ -633,6 +642,83 @@ export class HomePage extends Page {
       close();
     });
     x.focus();
+  }
+
+  // ---- the phone mirror: a card in the header, right of the servers ----
+
+  private phoneCard: { root: HTMLButtonElement; qr: HTMLElement; desktop: HTMLElement; phone: HTMLElement } | null = null;
+  private phoneTimer = 0;
+  private shownPhone = "";
+  private qrFor = "";
+
+  /** The mirror's QR code, and whether this Mac and a phone are on Tailscale. Opens Settings → Phone. */
+  private buildPhoneCard(): HTMLElement {
+    const root = el("button", "home-phone");
+    root.title = "Phone mirror settings";
+    root.addEventListener("click", () => this.source.openPhoneSettings());
+    const qr = el("span", "home-phone-qr");
+    const lights = el("span", "home-phone-lights");
+    // No words: a device's icon and its light; the tooltip says the rest.
+    const light = (glyph: typeof Monitor) => {
+      const row = el("span", "home-phone-light");
+      row.append(icon(glyph, 18), el("span", "home-phone-dot"));
+      lights.append(row);
+      return row;
+    };
+    const desktop = light(Monitor);
+    const phone = light(Smartphone);
+    root.append(qr, lights);
+    this.phoneCard = { root, qr, desktop, phone };
+    this.shownPhone = "";
+    // Not any URL, nor "" (no code), so the first render fills the tile.
+    this.qrFor = "-";
+    this.renderPhone(null);
+    const poll = () =>
+      void this.source.phone.status().then(
+        (s) => this.renderPhone(s),
+        () => this.renderPhone(null),
+      );
+    poll();
+    clearInterval(this.phoneTimer);
+    this.phoneTimer = window.setInterval(poll, PHONE_POLL_MS);
+    return root;
+  }
+
+  private renderPhone(s: PhoneStatus | null) {
+    const card = this.phoneCard;
+    if (!card) return;
+    const desktopOn = !!s && desktopOnTailscale(s);
+    const online = s ? phonesOnline(s) : [];
+    const url = s?.on && s.url && desktopOn ? s.url : "";
+    const desktopState = !s ? "…" : !s.installed ? "No Tailscale" : desktopOn ? "On Tailscale" : s.node?.state === "NeedsLogin" ? "Signed out" : "Off Tailscale";
+    const phoneState = !s ? "…" : !desktopOn ? "Waiting" : online.length ? (online.length === 1 ? online[0].name : `${online.length} online`) : "Not online";
+    // Writes only when something changed, so polling doesn't nudge the page's scroll.
+    const key = JSON.stringify([desktopOn, online.length, desktopState, phoneState, url, s?.on]);
+    if (key === this.shownPhone) return;
+    this.shownPhone = key;
+    const set = (row: HTMLElement, on: boolean, label: string) => {
+      row.classList.toggle("on", on);
+      row.classList.toggle("off", !!s && !on);
+      row.title = label;
+      row.setAttribute("aria-label", label);
+    };
+    set(card.desktop, desktopOn, `Desktop: ${desktopState}`);
+    set(card.phone, online.length > 0, `Phone: ${phoneState}`);
+    card.root.title = url
+      ? `Scan to open Workdesk on your phone: ${url}`
+      : "The phone mirror starts once this Mac is on Tailscale";
+    card.root.classList.toggle("mirror-off", !url);
+    if (url !== this.qrFor) {
+      this.qrFor = url;
+      if (!url) card.qr.replaceChildren();
+      else
+        void this.source.phone.qr(url).then(
+          (svg) => {
+            if (this.qrFor === url) card.qr.innerHTML = svg;
+          },
+          () => {},
+        );
+    }
   }
 
   // ---- the clock ----
@@ -1793,6 +1879,7 @@ export function liveHomeSource(
     | "jumpTo"
     | "openUrl"
     | "openSettings"
+    | "openPhoneSettings"
     | "openTab"
     | "reveal"
     | "openServer"
@@ -1819,6 +1906,7 @@ export function liveHomeSource(
     pullFor: (branch) => tickets.pulls.find((p) => p.kind === "authored" && p.branch === branch),
     usage: liveUsage,
     servers: () => servers.current,
+    phone: livePhone,
     onChange: (fn) => {
       tickets.onChange(fn);
       sessions.onChange(fn);

@@ -134,7 +134,9 @@ pub fn init(app: &AppHandle) {
         if let Err(e) = start_server() {
             eprintln!("phone: {e}");
         }
+        return;
     }
+    watch_tailscale();
 }
 
 fn save_subscriptions(subs: &[webpush::Subscription]) {
@@ -233,16 +235,22 @@ pub async fn phone_status() -> Status {
     blocking(status_now).await
 }
 
-/// Turns the mirror on or off, then reports where it stands. An error is
-/// returned (and kept for the status) when it can't be turned on.
-#[tauri::command]
-pub async fn phone_enable(on: bool) -> Result<Status, String> {
-    blocking(move || {
-        let result = if on { enable() } else { Ok(disable()) };
-        *phone().error.lock().unwrap() = result.as_ref().err().cloned();
-        result.map(|_| status_now())
-    })
-    .await
+/// How often the mirror checks whether Tailscale came up.
+const WATCH: Duration = Duration::from_secs(10);
+
+/// There's no switch: the mirror is on whenever this Mac is on Tailscale.
+/// Checks every few seconds and starts it once Tailscale is running and
+/// signed in. Why it couldn't start (HTTPS certificates off, port taken…) is
+/// kept for Settings → Phone; Tailscale being off or signed out isn't an error.
+fn watch_tailscale() {
+    std::thread::spawn(|| loop {
+        let p = phone();
+        if p.stop.lock().unwrap().is_none() && tailscale::cli().is_some() {
+            let up = tailscale::status().is_ok_and(|n| n.state == "Running" && n.login.is_some());
+            *p.error.lock().unwrap() = if up { enable().err() } else { None };
+        }
+        std::thread::sleep(WATCH);
+    });
 }
 
 fn enable() -> Result<(), String> {

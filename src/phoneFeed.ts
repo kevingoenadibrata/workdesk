@@ -47,28 +47,10 @@ export interface PhoneState {
   tabs: PhoneTab[];
 }
 
-const ON_KEY = "workdesk.phoneMirror";
-
-export function phoneMirrorWanted(): boolean {
-  try {
-    return localStorage.getItem(ON_KEY) === "on";
-  } catch {
-    return false;
-  }
-}
-
-export function setPhoneMirrorWanted(on: boolean) {
-  try {
-    localStorage.setItem(ON_KEY, on ? "on" : "off");
-  } catch {
-    // Asked again next launch.
-  }
-}
-
 /**
  * Keeps the phone mirror's copy of the tab list current, answers its requests
- * for a terminal's screen, and says when a phone starts watching. Turns the
- * mirror back on at launch if it was on.
+ * for a terminal's screen, and says when a phone starts watching. The mirror
+ * itself starts on its own once Tailscale is up (src-tauri/src/phone.rs).
  */
 export function feedPhone(ws: Workspace, monitor: AgentMonitor) {
   const build = (): PhoneState => {
@@ -143,8 +125,5 @@ export function feedPhone(ws: Workspace, monitor: AgentMonitor) {
     if (joined.length) showToast(`${joined.join(", ")} opened the phone mirror`, 4000);
   });
 
-  if (phoneMirrorWanted()) {
-    void invoke("phone_enable", { on: true }).catch((e) => showToast(`Phone mirror is off: ${e}`, 6000, undefined, { error: true }));
-  }
   send();
 }
