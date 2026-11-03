@@ -618,7 +618,11 @@ function syncLoadoutMenu() {
 onLoadoutsChange(syncLoadoutMenu);
 syncLoadoutMenu();
 void listen<string>("menu", ({ payload: id }) => {
-  if (id.startsWith("loadout:")) deployLoadout(id.slice("loadout:".length));
+  if (id.startsWith("action:")) {
+    // A menu bar item: same as pressing its shortcut.
+    const action = id.slice("action:".length);
+    if (action in handlers) handlers[action as Action]();
+  } else if (id.startsWith("loadout:")) deployLoadout(id.slice("loadout:".length));
   else if (id === "loadout-save-all") saveLoadout();
   else if (id === "loadout-edit") settings.showLoadout();
   else if (id === "quit") void quit("quit_app");

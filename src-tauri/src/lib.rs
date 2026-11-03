@@ -34,10 +34,27 @@ const CHECK_UPDATES: &str = "check-updates";
 const QUIT: &str = "quit";
 const CLOSE_WINDOW: &str = "close-window";
 
-/// Minimal menu: the default one binds ⌘W to "Close Window", which we want
-/// for closing tabs instead. Cut/Copy/Paste stay so the webview receives native
-/// clipboard events (without a menu item, macOS never sends the webview ⌘X). The Loadouts menu lists `loadouts` by name.
+/// Prefix of menu items that run a keyboard-shortcut action in the frontend
+/// ("action:splitRight" runs the same handler as ⌘D).
+const ACTION_PREFIX: &str = "action:";
+
+/// A menu item that runs the frontend's `action` (an `Action` in src/shortcuts.ts).
+///
+/// It has no key equivalent on purpose: a native accelerator takes the key
+/// before the webview sees it, so rebinding on the Shortcuts page, text-field
+/// editing and browser panes keeping ⌘F/⌘A would all break. The frontend's
+/// own keydown handler stays the one place keys are bound.
+fn action<R: Runtime>(h: &AppHandle<R>, action: &str, label: &str) -> tauri::Result<MenuItem<R>> {
+    MenuItem::with_id(h, format!("{ACTION_PREFIX}{action}"), label, true, None::<&str>)
+}
+
+/// The menu bar. The default one binds ⌘W to "Close Window", which we want for
+/// closing tabs instead. Cut/Copy/Paste stay so the webview receives native
+/// clipboard events (without a menu item, macOS never sends the webview ⌘X).
+/// Everything else mirrors the app's shortcuts, so each feature can be found
+/// (and searched for from Help) in the menu bar. The Loadouts menu lists `loadouts` by name.
 fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Result<Menu<R>> {
+    let sep = || PredefinedMenuItem::separator(h);
     let app_menu = Submenu::with_items(
         h,
         "Workdesk",
@@ -45,12 +62,30 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         &[
             &PredefinedMenuItem::about(h, None, None)?,
             &MenuItem::with_id(h, CHECK_UPDATES, "Check for Updates…", true, None::<&str>)?,
+            &sep()?,
+            &action(h, "openSettings", "Settings…")?,
+            &action(h, "openShortcuts", "Keyboard Shortcuts")?,
             &MenuItem::with_id(h, RESTART_ONBOARDING, "Restart Onboarding", true, None::<&str>)?,
-            &PredefinedMenuItem::separator(h)?,
+            &sep()?,
             &PredefinedMenuItem::hide(h, None)?,
             &PredefinedMenuItem::hide_others(h, None)?,
-            &PredefinedMenuItem::separator(h)?,
+            &PredefinedMenuItem::show_all(h, None)?,
+            &sep()?,
             &MenuItem::with_id(h, QUIT, "Quit Workdesk", true, Some("CmdOrCtrl+Q"))?,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        h,
+        "File",
+        true,
+        &[
+            &action(h, "newTabIn", "Teleport: New Tab in Folder…")?,
+            &action(h, "newSession", "New Claude Session…")?,
+            &action(h, "newBrowser", "New Browser Tab")?,
+            &action(h, "newTicket", "New Ticket…")?,
+            &sep()?,
+            &action(h, "renameTab", "Rename Tab…")?,
+            &action(h, "closeTab", "Close Pane or Tab")?,
         ],
     )?;
     let edit_menu = Submenu::with_items(
@@ -61,6 +96,62 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
             &PredefinedMenuItem::cut(h, None)?,
             &PredefinedMenuItem::copy(h, None)?,
             &PredefinedMenuItem::paste(h, None)?,
+            &sep()?,
+            &action(h, "selectAll", "Select All in Terminal")?,
+            &action(h, "findInTerminal", "Find in Terminal…")?,
+            &action(h, "clear", "Clear Terminal")?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        h,
+        "View",
+        true,
+        &[
+            &action(h, "openHome", "Home")?,
+            &action(h, "openServers", "Local Servers")?,
+            &sep()?,
+            &action(h, "toggleSidebar", "Show or Hide Sidebar")?,
+            &action(h, "collapseSidebar", "Collapse or Expand Sidebar")?,
+            &action(h, "toggleFileTree", "Show or Hide File Tree")?,
+            &sep()?,
+            &action(h, "zoomIn", "Bigger Text")?,
+            &action(h, "zoomOut", "Smaller Text")?,
+            &action(h, "resetZoom", "Default Text Size")?,
+        ],
+    )?;
+    let pane_menu = Submenu::with_items(
+        h,
+        "Pane",
+        true,
+        &[
+            &action(h, "splitRight", "Split Right")?,
+            &action(h, "splitDown", "Split Down")?,
+            &action(h, "splitBrowser", "Split Right with Browser")?,
+            &action(h, "unsplit", "Unsplit into Tabs")?,
+            &sep()?,
+            &action(h, "maximizePane", "Maximize or Restore Pane")?,
+            &action(h, "arrangePanes", "Change Layout…")?,
+            &sep()?,
+            &action(h, "nextPane", "Next Pane")?,
+            &action(h, "prevPane", "Previous Pane")?,
+            &action(h, "focusPaneLeft", "Focus Pane Left")?,
+            &action(h, "focusPaneRight", "Focus Pane Right")?,
+            &action(h, "focusPaneUp", "Focus Pane Above")?,
+            &action(h, "focusPaneDown", "Focus Pane Below")?,
+        ],
+    )?;
+    let tabs_menu = Submenu::with_items(
+        h,
+        "Tabs",
+        true,
+        &[
+            &action(h, "searchTabs", "Search Tabs…")?,
+            &action(h, "nextTab", "Next Tab")?,
+            &action(h, "prevTab", "Previous Tab")?,
+            &sep()?,
+            &action(h, "newGroup", "New Group")?,
+            &action(h, "groupSelected", "Group Selected Tabs")?,
+            &action(h, "ungroupSelected", "Ungroup Selected Tabs")?,
         ],
     )?;
     let loadout_menu = Submenu::new(h, "Loadouts", true)?;
@@ -71,16 +162,30 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         let id = format!("{LOADOUT_PREFIX}{name}");
         loadout_menu.append(&MenuItem::with_id(h, id, format!("#{name}"), true, None::<&str>)?)?;
     }
-    loadout_menu.append(&PredefinedMenuItem::separator(h)?)?;
+    loadout_menu.append(&sep()?)?;
     loadout_menu.append(&MenuItem::with_id(h, SAVE_ALL_LOADOUT, "Save All Tabs as Loadout…", true, None::<&str>)?)?;
     loadout_menu.append(&MenuItem::with_id(h, EDIT_LOADOUTS, "Edit Loadouts…", true, None::<&str>)?)?;
     let window_menu = Submenu::with_items(
         h,
         "Window",
         true,
-        &[&PredefinedMenuItem::minimize(h, None)?, &PredefinedMenuItem::fullscreen(h, None)?],
+        &[
+            &PredefinedMenuItem::minimize(h, None)?,
+            &PredefinedMenuItem::maximize(h, None)?,
+            &PredefinedMenuItem::fullscreen(h, None)?,
+        ],
     )?;
-    Menu::with_items(h, &[&app_menu, &edit_menu, &loadout_menu, &window_menu])
+    let help_menu = Submenu::with_items(h, "Help", true, &[&action(h, "openShortcuts", "Keyboard Shortcuts")?])?;
+    #[cfg(target_os = "macos")]
+    {
+        // Lets macOS add its own items: the window list, and the Help menu's search field.
+        window_menu.set_as_windows_menu_for_nsapp()?;
+        help_menu.set_as_help_menu_for_nsapp()?;
+    }
+    Menu::with_items(
+        h,
+        &[&app_menu, &file_menu, &edit_menu, &view_menu, &pane_menu, &tabs_menu, &loadout_menu, &window_menu, &help_menu],
+    )
 }
 
 /// Rebuilds the menu bar when the saved loadouts change.
@@ -137,7 +242,7 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
-            if id.starts_with(LOADOUT_PREFIX) || id == SAVE_ALL_LOADOUT || id == EDIT_LOADOUTS || id == QUIT || id == CHECK_UPDATES {
+            if id.starts_with(LOADOUT_PREFIX) || id.starts_with(ACTION_PREFIX) || id == SAVE_ALL_LOADOUT || id == EDIT_LOADOUTS || id == QUIT || id == CHECK_UPDATES {
                 let _ = app.emit("menu", id);
             } else if id == RESTART_ONBOARDING {
                 let _ = onboarding::open(app);
