@@ -47,7 +47,7 @@ import { THEMES, loadTheme, setTheme } from "./themes";
 import { resetZoom, zoom } from "./fonts";
 import { keepLayoutSaved, loadLayout } from "./layoutStore";
 import { addLoadout, cleanLoadoutName, findLoadout, onLoadoutsChange, usableLoadouts } from "./loadouts";
-import { installHoldHints, installShortcuts, keymap, onKeymapChange, type Action } from "./shortcuts";
+import { combosFor, installHoldHints, installShortcuts, keymap, onKeymapChange, type Action } from "./shortcuts";
 import { runnable } from "./macros";
 import { confirmClose } from "./closeGuard";
 import { shouldOnboard } from "./firstRun";
@@ -633,12 +633,17 @@ function saveLoadout(tabIds?: Set<number>, groupIds?: Set<number>) {
   settings.showLoadout(addLoadout(loadout));
 }
 
-// The Loadouts menu in the menu bar lists them, so rebuild it as they change.
-function syncLoadoutMenu() {
-  void invoke("set_loadout_menu", { names: usableLoadouts().map((l) => l.name) }).catch(() => {});
+// The menu bar's Loadouts menu lists the loadouts, and its items show their
+// shortcuts, so rebuild it as either changes.
+function syncMenu() {
+  const map = keymap();
+  const shortcuts: Record<string, string> = {};
+  for (const action of new Set(Object.values(map))) shortcuts[action] = combosFor(map, action)[0];
+  void invoke("update_menu", { names: usableLoadouts().map((l) => l.name), shortcuts }).catch(() => {});
 }
-onLoadoutsChange(syncLoadoutMenu);
-syncLoadoutMenu();
+onLoadoutsChange(syncMenu);
+onKeymapChange(syncMenu);
+syncMenu();
 void listen<string>("menu", ({ payload: id }) => {
   if (id.startsWith("action:")) {
     // A menu bar item: same as pressing its shortcut.
