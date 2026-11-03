@@ -5,9 +5,10 @@
 //! "copy on Esc" setting is on), so Workdesk watches the clipboard's change
 //! count. When it changes to an image while Shottr is, or just was, the app in
 //! front, that's a Shottr screenshot: "shottr-shot" goes out, and the drop zone
-//! beside the Dock and the main window offer to make a ticket of it. Only the
-//! change count and the list of types are read while watching; the image itself
-//! is read when you take the offer, and "shottr-taken" withdraws every offer.
+//! beside the Dock (showing it, from `shottr_preview`) and the main window offer
+//! to make a ticket of it. Only the change count and the list of types are read
+//! while watching; the image itself is read once it's known to be Shottr's, and
+//! held until it's taken or the next one comes. "shottr-taken" withdraws every offer.
 //!
 //! Workdesk can also ask Shottr for a screenshot (`shottr_grab`, through its
 //! `shottr://` URL scheme). The next image Shottr copies within a few minutes
@@ -38,11 +39,12 @@ struct Watch {
     shottr_seen: Option<Instant>,
     /// When `shottr_grab` asked for a screenshot.
     armed: Option<Instant>,
-    /// The change count of the screenshot on offer.
-    offered: Option<isize>,
 }
 
-static WATCH: Mutex<Watch> = Mutex::new(Watch { count: None, shottr_seen: None, armed: None, offered: None });
+/// The screenshot on offer: its bytes and the extension it's saved with.
+static HELD: Mutex<Option<(Vec<u8>, &'static str)>> = Mutex::new(None);
+
+static WATCH: Mutex<Watch> = Mutex::new(Watch { count: None, shottr_seen: None, armed: None });
 static WATCHING: AtomicBool = AtomicBool::new(false);
 
 /// Whether Shottr is installed, where apps usually live.
@@ -96,11 +98,9 @@ fn judge(w: &mut Watch, count: isize, image: bool, front: bool, now: Instant) ->
         return Shot::None;
     }
     if w.armed.take().is_some_and(|t| now.duration_since(t) < ARMED_FOR) {
-        w.offered = Some(count);
         return Shot::Ticket;
     }
     if w.shottr_seen.is_some_and(|t| now.duration_since(t) < RECENT) {
-        w.offered = Some(count);
         return Shot::Offer;
     }
     Shot::None
@@ -118,16 +118,15 @@ fn tick(app: &AppHandle) {
     let image = w.count.is_some_and(|c| c != count) && image_type(&board).is_some();
     let shot = judge(&mut w, count, image, front, Instant::now());
     drop(w);
-    match shot {
-        Shot::None => {}
-        Shot::Offer => {
-            let _ = app.emit("shottr-shot", ());
-        }
-        Shot::Ticket => {
-            if let Err(e) = ticket(app) {
-                eprintln!("shottr: {e}");
-            }
-        }
+    if shot == Shot::None {
+        return;
+    }
+    let Some(image) = read_image(&board) else { return };
+    *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(image);
+    if shot == Shot::Offer {
+        let _ = app.emit("shottr-shot", ());
+    } else if let Err(e) = ticket(app) {
+        eprintln!("shottr: {e}");
     }
 }
 
@@ -154,31 +153,33 @@ fn image_type(board: &objc2_app_kit::NSPasteboard) -> Option<(&'static objc2_app
     known.into_iter().find(|(t, _)| types.containsObject(t))
 }
 
-/// Saves the screenshot on offer with the ticket images and opens the composer with it.
+/// The clipboard's image and its extension.
 #[cfg(target_os = "macos")]
+fn read_image(board: &objc2_app_kit::NSPasteboard) -> Option<(Vec<u8>, &'static str)> {
+    let (kind, ext) = image_type(board)?;
+    Some((board.dataForType(kind)?.to_vec(), ext))
+}
+
+/// Saves the held screenshot with the ticket images and opens the composer with it.
 fn ticket(app: &AppHandle) -> Result<(), String> {
-    let board = objc2_app_kit::NSPasteboard::generalPasteboard();
     use tauri::Emitter;
 
-    let offered = WATCH.lock().unwrap_or_else(|e| e.into_inner()).offered;
-    match offered {
-        None => return Err("That screenshot is already in a ticket".into()),
-        Some(c) if c != board.changeCount() => return Err("Something else was copied since: take the screenshot again".into()),
-        _ => {}
-    }
-    let (kind, ext) = image_type(&board).ok_or("The screenshot isn't on the clipboard anymore")?;
-    let bytes = board.dataForType(kind).ok_or("Couldn't read the screenshot from the clipboard")?.to_vec();
+    let (bytes, ext) = HELD.lock().unwrap_or_else(|e| e.into_inner()).take().ok_or("That screenshot is already in a ticket")?;
     let path = crate::files::save_ticket_bytes(&format!("shottr.{ext}"), &bytes)?;
     let name = path.rsplit('/').next().unwrap_or("shottr.png");
-    WATCH.lock().unwrap_or_else(|e| e.into_inner()).offered = None;
     // Every offer of it goes away.
     let _ = app.emit("shottr-taken", ());
     crate::dock::open_composer(app, &format!("![{name}]({path})"))
 }
 
-#[cfg(not(target_os = "macos"))]
-fn ticket(_app: &AppHandle) -> Result<(), String> {
-    Err("Shottr is a Mac app".into())
+/// The screenshot on offer, for the drop zone to show.
+#[tauri::command]
+pub fn shottr_preview() -> Result<tauri::ipc::Response, String> {
+    HELD.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|(bytes, _)| tauri::ipc::Response::new(bytes.clone()))
+        .ok_or_else(|| "No screenshot on offer".into())
 }
 
 /// Whether Shottr is installed, so its buttons show.
@@ -220,14 +221,13 @@ mod tests {
     use std::time::{Duration, Instant};
 
     fn fresh() -> Watch {
-        Watch { count: None, shottr_seen: None, armed: None, offered: None }
+        Watch { count: None, shottr_seen: None, armed: None }
     }
 
     #[test]
     fn ignores_what_was_there_first() {
         let mut w = fresh();
         assert_eq!(judge(&mut w, 5, true, true, Instant::now()), Shot::None);
-        assert_eq!(w.offered, None);
     }
 
     #[test]
@@ -237,7 +237,6 @@ mod tests {
         judge(&mut w, 1, false, true, t);
         // Shottr's editor closed by the next read: it was in front just before.
         assert_eq!(judge(&mut w, 2, true, false, t + Duration::from_millis(400)), Shot::Offer);
-        assert_eq!(w.offered, Some(2));
         // The same copy isn't offered twice.
         assert_eq!(judge(&mut w, 2, true, false, t + Duration::from_millis(800)), Shot::None);
     }

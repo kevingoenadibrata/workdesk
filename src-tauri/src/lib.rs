@@ -164,6 +164,7 @@ pub fn run() {
             shottr::shottr_installed,
             shottr::shottr_grab,
             shottr::shottr_ticket,
+            shottr::shottr_preview,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

@@ -84,15 +84,26 @@ function dropCard() {
     text.textContent = over ? "Release to start a ticket" : idle;
   };
 
-  // A Shottr screenshot was just copied: the zone becomes a button for a while.
+  // A Shottr screenshot was just copied: the zone becomes a button showing it, for a while.
   const offer = document.createElement("button");
   offer.className = "dock-action dock-shot";
+  const thumb = document.createElement("img");
+  thumb.className = "dock-shot-thumb";
+  thumb.alt = "";
   const offerText = document.createElement("span");
-  offer.append(icon(Camera, 18), offerText);
+  offer.append(thumb, icon(Camera, 16), offerText);
   let offerTimer = 0;
+  let thumbUrl = "";
+  const setThumb = (url: string) => {
+    if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+    thumbUrl = url;
+    thumb.hidden = !url;
+    thumb.src = url;
+  };
   const endOffer = () => {
     clearTimeout(offerTimer);
     offer.replaceWith(hint);
+    setThumb("");
   };
   offer.onclick = () => {
     clearTimeout(offerTimer);
@@ -105,6 +116,11 @@ function dropCard() {
   void listen("shottr-shot", () => {
     clearTimeout(offerTimer);
     offerText.textContent = "Ticket from screenshot";
+    setThumb("");
+    invoke<ArrayBuffer>("shottr_preview").then(
+      (bytes) => offer.isConnected && setThumb(URL.createObjectURL(new Blob([bytes]))),
+      () => {},
+    );
     if (hint.isConnected) hint.replaceWith(offer);
     offerTimer = window.setTimeout(endOffer, SHOT_OFFER_MS);
   });
