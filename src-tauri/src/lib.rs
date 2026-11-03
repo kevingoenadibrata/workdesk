@@ -8,7 +8,7 @@ mod files;
 mod git;
 mod glow;
 mod keystop;
-mod menuicons;
+mod nativemenu;
 mod notch;
 mod onboarding;
 mod phone;
@@ -21,6 +21,8 @@ mod tickets;
 mod usage;
 mod webpush;
 mod worktrees;
+
+use std::collections::HashMap;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -40,23 +42,28 @@ const CLOSE_WINDOW: &str = "close-window";
 /// ("action:splitRight" runs the same handler as ⌘D).
 const ACTION_PREFIX: &str = "action:";
 
-/// A menu item that runs the frontend's `action` (an `Action` in src/shortcuts.ts).
-///
-/// It has no key equivalent on purpose: a native accelerator takes the key
-/// before the webview sees it, so rebinding on the Shortcuts page, text-field
-/// editing and browser panes keeping ⌘F/⌘A would all break. The frontend's
-/// own keydown handler stays the one place keys are bound.
-fn action<R: Runtime>(h: &AppHandle<R>, action: &str, label: &str) -> tauri::Result<MenuItem<R>> {
-    MenuItem::with_id(h, format!("{ACTION_PREFIX}{action}"), label, true, None::<&str>)
-}
 
 /// The menu bar. The default one binds ⌘W to "Close Window", which we want for
 /// closing tabs instead. Cut/Copy/Paste stay so the webview receives native
 /// clipboard events (without a menu item, macOS never sends the webview ⌘X).
 /// Everything else mirrors the app's shortcuts, so each feature can be found
 /// (and searched for from Help) in the menu bar. The Loadouts menu lists `loadouts` by name.
-fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Result<Menu<R>> {
+///
+/// Also returns each action item's (title, action), so `nativemenu` can show its shortcut.
+fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Result<(Menu<R>, Vec<(String, String)>)> {
     let sep = || PredefinedMenuItem::separator(h);
+    let actions = std::cell::RefCell::new(Vec::new());
+    // A menu item that runs the frontend's `action` (an `Action` in src/shortcuts.ts).
+    //
+    // It gets no Tauri accelerator on purpose: a live key equivalent takes the
+    // key before the webview sees it, so rebinding on the Shortcuts page,
+    // text-field editing and browser panes keeping ⌘F/⌘A would all break. The
+    // frontend's keydown handler stays the one place keys are bound;
+    // `nativemenu` only shows the shortcut while the menu is open.
+    let action = |action: &str, label: &str| {
+        actions.borrow_mut().push((label.to_string(), action.to_string()));
+        MenuItem::with_id(h, format!("{ACTION_PREFIX}{action}"), label, true, None::<&str>)
+    };
     let app_menu = Submenu::with_items(
         h,
         "Workdesk",
@@ -65,8 +72,8 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
             &PredefinedMenuItem::about(h, None, None)?,
             &MenuItem::with_id(h, CHECK_UPDATES, "Check for Updates…", true, None::<&str>)?,
             &sep()?,
-            &action(h, "openSettings", "Settings…")?,
-            &action(h, "openShortcuts", "Keyboard Shortcuts")?,
+            &action("openSettings", "Settings…")?,
+            &action("openShortcuts", "Keyboard Shortcuts")?,
             &MenuItem::with_id(h, RESTART_ONBOARDING, "Restart Onboarding", true, None::<&str>)?,
             &sep()?,
             &PredefinedMenuItem::hide(h, None)?,
@@ -81,13 +88,13 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         "File",
         true,
         &[
-            &action(h, "newTabIn", "Teleport: New Tab in Folder…")?,
-            &action(h, "newSession", "New Claude Session…")?,
-            &action(h, "newBrowser", "New Browser Tab")?,
-            &action(h, "newTicket", "New Ticket…")?,
+            &action("newTabIn", "Teleport: New Tab in Folder…")?,
+            &action("newSession", "New Claude Session…")?,
+            &action("newBrowser", "New Browser Tab")?,
+            &action("newTicket", "New Ticket…")?,
             &sep()?,
-            &action(h, "renameTab", "Rename Tab…")?,
-            &action(h, "closeTab", "Close Pane or Tab")?,
+            &action("renameTab", "Rename Tab…")?,
+            &action("closeTab", "Close Pane or Tab")?,
         ],
     )?;
     let edit_menu = Submenu::with_items(
@@ -99,9 +106,9 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
             &PredefinedMenuItem::copy(h, None)?,
             &PredefinedMenuItem::paste(h, None)?,
             &sep()?,
-            &action(h, "selectAll", "Select All in Terminal")?,
-            &action(h, "findInTerminal", "Find in Terminal…")?,
-            &action(h, "clear", "Clear Terminal")?,
+            &action("selectAll", "Select All in Terminal")?,
+            &action("findInTerminal", "Find in Terminal…")?,
+            &action("clear", "Clear Terminal")?,
         ],
     )?;
     let view_menu = Submenu::with_items(
@@ -109,16 +116,16 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         "View",
         true,
         &[
-            &action(h, "openHome", "Home")?,
-            &action(h, "openServers", "Local Servers")?,
+            &action("openHome", "Home")?,
+            &action("openServers", "Local Servers")?,
             &sep()?,
-            &action(h, "toggleSidebar", "Show or Hide Sidebar")?,
-            &action(h, "collapseSidebar", "Collapse or Expand Sidebar")?,
-            &action(h, "toggleFileTree", "Show or Hide File Tree")?,
+            &action("toggleSidebar", "Show or Hide Sidebar")?,
+            &action("collapseSidebar", "Collapse or Expand Sidebar")?,
+            &action("toggleFileTree", "Show or Hide File Tree")?,
             &sep()?,
-            &action(h, "zoomIn", "Bigger Text")?,
-            &action(h, "zoomOut", "Smaller Text")?,
-            &action(h, "resetZoom", "Default Text Size")?,
+            &action("zoomIn", "Bigger Text")?,
+            &action("zoomOut", "Smaller Text")?,
+            &action("resetZoom", "Default Text Size")?,
         ],
     )?;
     let pane_menu = Submenu::with_items(
@@ -126,20 +133,20 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         "Pane",
         true,
         &[
-            &action(h, "splitRight", "Split Right")?,
-            &action(h, "splitDown", "Split Down")?,
-            &action(h, "splitBrowser", "Split Right with Browser")?,
-            &action(h, "unsplit", "Unsplit into Tabs")?,
+            &action("splitRight", "Split Right")?,
+            &action("splitDown", "Split Down")?,
+            &action("splitBrowser", "Split Right with Browser")?,
+            &action("unsplit", "Unsplit into Tabs")?,
             &sep()?,
-            &action(h, "maximizePane", "Maximize or Restore Pane")?,
-            &action(h, "arrangePanes", "Change Layout…")?,
+            &action("maximizePane", "Maximize or Restore Pane")?,
+            &action("arrangePanes", "Change Layout…")?,
             &sep()?,
-            &action(h, "nextPane", "Next Pane")?,
-            &action(h, "prevPane", "Previous Pane")?,
-            &action(h, "focusPaneLeft", "Focus Pane Left")?,
-            &action(h, "focusPaneRight", "Focus Pane Right")?,
-            &action(h, "focusPaneUp", "Focus Pane Above")?,
-            &action(h, "focusPaneDown", "Focus Pane Below")?,
+            &action("nextPane", "Next Pane")?,
+            &action("prevPane", "Previous Pane")?,
+            &action("focusPaneLeft", "Focus Pane Left")?,
+            &action("focusPaneRight", "Focus Pane Right")?,
+            &action("focusPaneUp", "Focus Pane Above")?,
+            &action("focusPaneDown", "Focus Pane Below")?,
         ],
     )?;
     let tabs_menu = Submenu::with_items(
@@ -147,13 +154,13 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
         "Tabs",
         true,
         &[
-            &action(h, "searchTabs", "Search Tabs…")?,
-            &action(h, "nextTab", "Next Tab")?,
-            &action(h, "prevTab", "Previous Tab")?,
+            &action("searchTabs", "Search Tabs…")?,
+            &action("nextTab", "Next Tab")?,
+            &action("prevTab", "Previous Tab")?,
             &sep()?,
-            &action(h, "newGroup", "New Group")?,
-            &action(h, "groupSelected", "Group Selected Tabs")?,
-            &action(h, "ungroupSelected", "Ungroup Selected Tabs")?,
+            &action("newGroup", "New Group")?,
+            &action("groupSelected", "Group Selected Tabs")?,
+            &action("ungroupSelected", "Ungroup Selected Tabs")?,
         ],
     )?;
     let loadout_menu = Submenu::new(h, "Loadouts", true)?;
@@ -177,25 +184,28 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
             &PredefinedMenuItem::fullscreen(h, None)?,
         ],
     )?;
-    let help_menu = Submenu::with_items(h, "Help", true, &[&action(h, "openShortcuts", "Keyboard Shortcuts")?])?;
+    let help_menu = Submenu::with_items(h, "Help", true, &[&action("openShortcuts", "Keyboard Shortcuts")?])?;
     #[cfg(target_os = "macos")]
     {
         // Lets macOS add its own items: the window list, and the Help menu's search field.
         window_menu.set_as_windows_menu_for_nsapp()?;
         help_menu.set_as_help_menu_for_nsapp()?;
     }
-    Menu::with_items(
+    let menu = Menu::with_items(
         h,
         &[&app_menu, &file_menu, &edit_menu, &view_menu, &pane_menu, &tabs_menu, &loadout_menu, &window_menu, &help_menu],
-    )
+    )?;
+    Ok((menu, actions.into_inner()))
 }
 
-/// Rebuilds the menu bar when the saved loadouts change.
+/// Rebuilds the menu bar when the saved loadouts or the key bindings change.
+/// `shortcuts` maps an action to the combo it's bound to ("mod+shift+d").
 #[tauri::command]
-fn set_loadout_menu(app: AppHandle, names: Vec<String>) -> Result<(), String> {
-    let menu = build_menu(&app, &names).map_err(|e| e.to_string())?;
+fn update_menu(app: AppHandle, names: Vec<String>, shortcuts: HashMap<String, String>) -> Result<(), String> {
+    let (menu, actions) = build_menu(&app, &names).map_err(|e| e.to_string())?;
     app.set_menu(menu).map_err(|e| e.to_string())?;
-    menuicons::apply(&app);
+    let keys = actions.into_iter().filter_map(|(title, action)| Some((title, shortcuts.get(&action)?.clone()))).collect();
+    nativemenu::apply(&app, keys);
     Ok(())
 }
 
@@ -224,8 +234,8 @@ pub fn run() {
         .manage(notch::NotchState::default())
         .manage(browser::BrowserState::default())
         .setup(|app| {
-            app.set_menu(build_menu(app.handle(), &[])?)?;
-            menuicons::apply(app.handle());
+            app.set_menu(build_menu(app.handle(), &[])?.0)?;
+            nativemenu::apply(app.handle(), Vec::new());
             if let Some(main) = app.get_webview("main") {
                 keystop::contain_keys(&main);
             }
@@ -262,7 +272,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            set_loadout_menu,
+            update_menu,
             quit_app,
             close_main_window,
             appicon::set_app_icon,
