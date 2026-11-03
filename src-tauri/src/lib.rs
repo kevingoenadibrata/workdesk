@@ -1,3 +1,4 @@
+mod agent_tickets;
 mod agents;
 mod appicon;
 mod browser;
@@ -238,6 +239,7 @@ pub fn run() {
             }
             shottr::start(app.handle());
             phone::init(app.handle());
+            agent_tickets::start(app.handle());
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -296,6 +298,8 @@ pub fn run() {
             pty::pty_cwds,
             pty::pty_busy,
             agents::agent_status,
+            agent_tickets::agent_tickets_take,
+            agent_tickets::agent_tickets_done,
             usage::usage_status,
             usage::usage_ping_claude,
             dirs::home_dir,
