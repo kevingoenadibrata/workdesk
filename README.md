@@ -112,6 +112,8 @@ Hand-made originals like **Ember**, **Glacier** and **Sakura Night**, plus the p
 
 Every coding agent running in your panes shows up here too: **Claude Code**, **Codex** and **opencode**, each with what it's doing and whether it's **waiting on you**. The header shows your **5-hour and weekly usage limits** for Claude and Codex, and a **local servers** button that opens a drawer listing every web server on your machine, whether or not you started it in Workdesk (<kbd>⌘</kbd><kbd>⇧</kbd><kbd>L</kbd>).
 
+Agents can write tickets too. Workdesk installs a `workdesk-ticket` skill into `~/.claude/skills`, so you can tell any Claude Code session "ticket that for later" and a `WD-n` ticket lands in the backlog, linked to the repo it was written from. Its script drops the ticket in `~/.workdesk/inbox/tickets`; if Workdesk isn't open, the ticket waits there until it is.
+
 Connect your accounts in **Settings → Integrations**. Tokens are stored in the macOS Keychain, and GitHub falls back to `gh auth token` if you don't paste one.
 
 <br>

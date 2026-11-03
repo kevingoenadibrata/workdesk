@@ -380,6 +380,28 @@ async function endMergedSessions(): Promise<string> {
   return failed.length ? `${done}. Kept ${failed.join("; ")}` : done;
 }
 
+/** A ticket an agent wrote with the workdesk-ticket skill (src-tauri/src/agent_tickets.rs). */
+interface AgentTicket {
+  name: string;
+  title: string;
+  project: string;
+  repo: string | null;
+  body: string;
+}
+
+/** Adds the tickets agents left in the inbox to the backlog, and tells each agent its id. */
+async function takeAgentTickets() {
+  const waiting = await invoke<AgentTicket[]>("agent_tickets_take").catch(() => [] as AgentTicket[]);
+  for (const a of waiting) {
+    const t = await ticketStore.create({ provider: "workdesk", target: { id: "", name: a.project }, title: a.title, body: a.body }).catch(() => null);
+    if (!t) continue;
+    // A session started from it opens in the repository it was written from.
+    if (a.repo && t.project && !repoFor(t)) rememberRepo(t, a.repo);
+    void invoke("agent_tickets_done", { name: a.name, id: t.id }).catch(() => {});
+    showToast(`An agent wrote ${t.id}: ${t.title}`, 4000, { label: "Home", run: () => homePage.open() });
+  }
+}
+
 const AUTO_END_AFTER = 24 * 60 * 60 * 1000;
 /** Sessions the sweep couldn't end; it says so once, then leaves them to you. */
 const autoEndFailed = new Set<string>();
@@ -980,6 +1002,8 @@ setTimeout(() => void autoEndMerged(), 30_000);
 setInterval(() => void autoEndMerged(), 60 * 60 * 1000);
 servers.start();
 ticketStore.start();
+void takeAgentTickets();
+void listen("agent-tickets", () => void takeAgentTickets());
 // Start on Home; last time's tabs are restored behind it.
 homePage.open();
 
