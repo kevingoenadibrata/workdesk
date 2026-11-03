@@ -121,6 +121,9 @@ feedNotch(monitor, {
   newTicket: () => homePage.newTicket(),
   teleport: () => newTabIn(),
 });
+// Files dropped on the drop zone beside the Dock (src-tauri/src/dock.rs): the
+// composer opens with them in the description. Workdesk is already in front.
+void listen<string>("dock-new-ticket", ({ payload }) => homePage.newTicket(payload));
 
 /**
  * Asks which folder's repo to start `branch` in (Teleport, folders only),

@@ -211,6 +211,20 @@ pub fn save_ticket_image(request: tauri::ipc::Request<'_>) -> Result<String, Str
     save_in(&attachments_dir(), &name, bytes)
 }
 
+/// Whether `path` looks like an image a ticket can show, by its extension.
+pub fn is_image(path: &Path) -> bool {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default().to_ascii_lowercase();
+    matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "tiff" | "tif" | "bmp")
+}
+
+/// Copies an image file in with the ticket images, as `save_ticket_image`
+/// does for pasted ones, and returns its new path.
+pub fn copy_ticket_image(path: &Path) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("Couldn't read {}: {e}", path.display()))?;
+    let name = plain_name(path.file_name().and_then(|n| n.to_str()).unwrap_or_default());
+    save_in(&attachments_dir(), &name, &bytes)
+}
+
 /// The bytes of an image saved by `save_ticket_image`, for showing it in a
 /// ticket. Paths outside ~/.workdesk/attachments are refused.
 #[tauri::command]
@@ -225,7 +239,16 @@ pub fn read_ticket_image(path: String) -> Result<tauri::ipc::Response, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::plain_name;
+    use super::{is_image, plain_name};
+    use std::path::Path;
+
+    #[test]
+    fn images_by_extension() {
+        assert!(is_image(Path::new("/tmp/Screenshot 2026-11-03.PNG")));
+        assert!(is_image(Path::new("a.jpeg")));
+        assert!(!is_image(Path::new("notes.md")));
+        assert!(!is_image(Path::new("png")));
+    }
 
     #[test]
     fn plain_names_have_no_spaces_or_brackets() {

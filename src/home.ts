@@ -6,7 +6,7 @@ import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
 import { BADGE_LABELS, agentCard, faceOf, fillAgentCard, needsYou, type Agent, type AgentMonitor } from "./monitor";
 import { logLines } from "./monitorSettings";
-import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, isSavedImage } from "./tickets";
+import { PROVIDERS, WRITABLE, branchName, providerName, updatedAt, ago, type Draft, type PullRequest, type Target, type Ticket, type TicketStore, type Writable, ticketsApi, ticketImages, isSavedImage, savedImages } from "./tickets";
 import { sessionLabel, ticketKey, type Session, type SessionState, type SessionStore } from "./sessions";
 import { harnessLogo } from "./harnessLogos";
 import { UsagePanel, liveUsage, onShownHarness, shownHarness, windowSummary, type Usage, type UsageSource, type UsageWindow } from "./usage";
@@ -542,13 +542,24 @@ export class HomePage extends Page {
     this.openDrawer();
   }
 
-  /** Opens Home with the New ticket composer showing; again, leaves the open composer be. */
-  newTicket() {
+  /**
+   * Opens Home with the New ticket composer showing; again, leaves the open composer be.
+   * `seed` starts the description (files dropped on the Dock's drop zone); with a
+   * composer already open, it's added to the end of its description.
+   */
+  newTicket(seed?: string) {
     if (!this.isOpen) this.open();
     const open = document.querySelector<HTMLElement>(".home-compose");
-    if (open) return open.querySelector<HTMLElement>(".home-compose-title")?.focus();
+    if (open) {
+      const body = open.querySelector<HTMLTextAreaElement>(".home-compose-body");
+      if (seed && body) {
+        body.value = body.value.trim() ? `${body.value.replace(/\n*$/, "")}\n${seed}\n` : `${seed}\n`;
+        body.dispatchEvent(new Event("input"));
+      }
+      return open.querySelector<HTMLElement>(".home-compose-title")?.focus();
+    }
     this.closeDrawer?.(false);
-    this.openComposer();
+    this.openComposer(undefined, undefined, seed);
   }
 
   /** The servers' cards, in a panel sliding in from the right. */
@@ -968,12 +979,14 @@ export class HomePage extends Page {
    * A modal to write a ticket: where it goes (Workdesk, GitHub or ClickUp), a title and a description.
    * Given one of Workdesk's own tickets, it edits that one instead and goes back to its details.
    */
-  private openComposer(editing?: Ticket, returnTo?: HTMLElement | null) {
+  private openComposer(editing?: Ticket, returnTo?: HTMLElement | null, seed?: string) {
     this.closeTicket?.();
     const returnFocus = returnTo !== undefined ? returnTo : (document.activeElement as HTMLElement | null);
     const memory = loadCompose();
     const writable: Writable[] = editing ? ["workdesk"] : this.source.writable();
-    let provider: Writable = editing ? "workdesk" : writable.includes(memory.provider) ? memory.provider : "workdesk";
+    // Saved images stay on this Mac, so a seed with any starts as a Workdesk ticket.
+    const seedImages = !!seed && savedImages(seed).length > 0;
+    let provider: Writable = editing || seedImages ? "workdesk" : writable.includes(memory.provider) ? memory.provider : "workdesk";
 
     const backdrop = el("div", "home-modal-backdrop");
     const modal = el("form", "home-modal home-compose");
@@ -1115,6 +1128,8 @@ export class HomePage extends Page {
     if (editing) {
       title.value = editing.title;
       body.value = editing.body ?? "";
+    } else if (seed) {
+      body.value = `${seed}\n`;
     }
 
     // Pasted or dropped images are saved to disk and linked by path, for Workdesk's own tickets.

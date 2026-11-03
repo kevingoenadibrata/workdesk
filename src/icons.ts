@@ -67,6 +67,7 @@ export {
   Eye,
   EyeOff,
   File,
+  FileUp,
   FolderTree,
   RefreshCw,
   SquareTerminal,

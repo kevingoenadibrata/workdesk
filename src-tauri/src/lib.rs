@@ -2,6 +2,7 @@ mod agents;
 mod appicon;
 mod browser;
 mod dirs;
+mod dock;
 mod files;
 mod git;
 mod glow;
@@ -113,6 +114,9 @@ pub fn run() {
             if let Err(e) = notch::open(app.handle()) {
                 eprintln!("notch: {e}");
             }
+            if let Err(e) = dock::open(app.handle()) {
+                eprintln!("dock: {e}");
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -150,6 +154,7 @@ pub fn run() {
             notch::notch_hit,
             notch::notch_jump,
             notch::notch_action,
+            dock::dock_drop,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
