@@ -12,6 +12,7 @@
 //! hovered. Hover comes from here rather than CSS because a webview in a window
 //! that is never key doesn't get dependable hover events.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -22,6 +23,9 @@ const WIDTH: f64 = 560.0;
 const HEIGHT: f64 = 320.0;
 /// How often to check where the pointer is.
 const POLL_MS: u64 = 50;
+/// Bumped each time the window opens, so a pointer timer from an earlier
+/// opening stops instead of running alongside the new one.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Where the window sits and how big the page's shape is right now, all in
 /// AppKit points (origin at the bottom left of the main display).
@@ -73,8 +77,8 @@ fn bring_main_forward(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens the notch window if a display has a notch. Without one it does nothing.
-/// Must run on the main thread (from `setup`).
+/// Opens the notch window if a display has a notch. Without one, or when it's
+/// already open, it does nothing. Must run on the main thread.
 #[cfg(target_os = "macos")]
 pub fn open(app: &AppHandle) -> Result<(), String> {
     use objc2::MainThreadMarker;
@@ -82,6 +86,9 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
     use objc2_foundation::{NSPoint, NSRect, NSSize};
     use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+    if app.get_webview_window(LABEL).is_some() {
+        return Ok(());
+    }
     let mtm = MainThreadMarker::new().ok_or("notch: not on the main thread")?;
     // A notched display has a top safe-area inset (macOS 12+).
     let Some(screen) = NSScreen::screens(mtm).iter().find(|s| s.safeAreaInsets().top > 0.0) else {
@@ -140,9 +147,13 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
         *g = Geometry { center_x, top, shape_w: notch_w, shape_h: notch_h, hovering: false };
     }
 
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(POLL_MS));
+        if GENERATION.load(Ordering::SeqCst) != generation {
+            break;
+        }
         let handle = app.clone();
         if app.run_on_main_thread(move || track_pointer(&handle)).is_err() {
             break;
@@ -154,6 +165,15 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
 #[cfg(not(target_os = "macos"))]
 pub fn open(_app: &AppHandle) -> Result<(), String> {
     Ok(())
+}
+
+/// Closes the notch window, if it's open, and stops its pointer timer.
+pub fn close(app: &AppHandle) -> Result<(), String> {
+    GENERATION.fetch_add(1, Ordering::SeqCst);
+    match app.get_webview_window(LABEL) {
+        Some(window) => window.destroy().map_err(|e| e.to_string()),
+        None => Ok(()),
+    }
 }
 
 /// Makes the window clickable while the pointer is over the shape (and click-through

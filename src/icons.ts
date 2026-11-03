@@ -39,6 +39,7 @@ export {
   House,
   Maximize2,
   Minimize2,
+  Monitor,
   Orbit,
   PanelLeftClose,
   PanelLeftOpen,

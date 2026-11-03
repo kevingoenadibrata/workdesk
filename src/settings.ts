@@ -12,6 +12,7 @@ import {
   Folder,
   Plug,
   Layers,
+  Monitor,
   Package,
   Palette,
   Plus,
@@ -56,6 +57,13 @@ import {
   onFontChange,
   setFont,
 } from "./fonts";
+
+/** Which windows outside the main one are shown; saved by the backend. */
+type Surfaces = { notch: boolean; dock: boolean };
+const SURFACES: { id: keyof Surfaces; label: string }[] = [
+  { id: "notch", label: "Notch" },
+  { id: "dock", label: "Dock cards" },
+];
 
 /** One prompt per command line, shown in the gutter beside the commands. */
 function gutterPrompts(lines: number) {
@@ -300,10 +308,10 @@ export class Settings extends Page {
     return focus;
   }
 
-  /** Font settings, the default color, the Dock icon, then the theme gallery; returns the theme search box to focus. */
+  /** Font settings, the default color, the Dock icon, the notch and Dock cards, then the theme gallery; returns the theme search box to focus. */
   private buildAppearance(content: HTMLElement) {
     const section = this.buildThemes();
-    content.append(this.buildFont(), this.buildDefaultColor(), this.buildAppIcon(), this.buildMonitor(), section);
+    content.append(this.buildFont(), this.buildDefaultColor(), this.buildAppIcon(), this.buildSurfaces(), this.buildMonitor(), section);
     return section.querySelector<HTMLElement>(".theme-search input");
   }
 
@@ -442,6 +450,61 @@ export class Settings extends Page {
     const fields = el("div", "font-fields");
     fields.append(field("Font", family), field("Size", size), field("Line height", lineHeight), options);
     section.append(sectionTitle("Font", Type), intro, fields, preview, reset);
+    return section;
+  }
+
+  /** Shown/Hidden for the notch strip and the cards beside the Dock; each applies right away. */
+  private buildSurfaces() {
+    const section = el("section", "page-section");
+    const intro = el(
+      "p",
+      "page-intro",
+      "The strip around the MacBook notch, and the usage, New ticket and drop cards beside the Dock. Hide either one; it stays hidden after a restart.",
+    );
+    const fields = el("div", "surface-fields");
+    let current: Surfaces = { notch: true, dock: true };
+    const groups = new Map<keyof Surfaces, HTMLElement>();
+    const sync = () => {
+      for (const [id, group] of groups) {
+        for (const b of group.querySelectorAll<HTMLElement>(".settings-toggle-option")) {
+          b.setAttribute("aria-checked", String((b.dataset.shown === "true") === current[id]));
+        }
+      }
+    };
+    for (const { id, label } of SURFACES) {
+      const group = el("div", "settings-toggle");
+      group.setAttribute("role", "radiogroup");
+      group.setAttribute("aria-label", label);
+      for (const [shown, text] of [[true, "Shown"], [false, "Hidden"]] as const) {
+        const b = el("button", "settings-toggle-option", text);
+        b.setAttribute("role", "radio");
+        b.dataset.shown = String(shown);
+        b.addEventListener("click", () => {
+          if (current[id] === shown) return;
+          const before = current;
+          current = { ...current, [id]: shown };
+          sync();
+          invoke("surfaces_set", { surfaces: current }).catch((e) => {
+            console.error("surfaces_set", e);
+            current = before;
+            sync();
+          });
+        });
+        group.append(b);
+      }
+      groups.set(id, group);
+      const field = el("div", "font-field");
+      field.append(el("span", "font-label", label), group);
+      fields.append(field);
+    }
+    sync();
+    invoke<Surfaces>("surfaces_get")
+      .then((s) => {
+        current = s;
+        sync();
+      })
+      .catch((e) => console.error("surfaces_get", e));
+    section.append(sectionTitle("Notch and Dock", Monitor), intro, fields);
     return section;
   }
 
