@@ -77,19 +77,36 @@ pub struct Account {
 
 const KEYCHAIN_SERVICE: &str = "Workdesk Integrations";
 
+/// Debug builds launched with `WORKDESK_NO_KEYCHAIN=1` never touch the Keychain.
+/// A dev copy isn't the app the user allowed, so every read asks for their
+/// login password; this lets one run (to test UI) without those prompts.
+#[cfg(target_os = "macos")]
+fn keychain_off() -> bool {
+    cfg!(debug_assertions) && std::env::var_os("WORKDESK_NO_KEYCHAIN").is_some()
+}
+
 #[cfg(target_os = "macos")]
 fn stored_token(p: Provider) -> Option<String> {
+    if keychain_off() {
+        return None;
+    }
     let bytes = security_framework::passwords::get_generic_password(KEYCHAIN_SERVICE, p.key()).ok()?;
     String::from_utf8(bytes).ok().filter(|t| !t.is_empty())
 }
 
 #[cfg(target_os = "macos")]
 fn store_token(p: Provider, token: &str) -> Result<(), String> {
+    if keychain_off() {
+        return Err("The Keychain is off in this dev build (WORKDESK_NO_KEYCHAIN)".into());
+    }
     security_framework::passwords::set_generic_password(KEYCHAIN_SERVICE, p.key(), token.as_bytes()).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "macos")]
 fn forget_token(p: Provider) {
+    if keychain_off() {
+        return;
+    }
     let _ = security_framework::passwords::delete_generic_password(KEYCHAIN_SERVICE, p.key());
 }
 

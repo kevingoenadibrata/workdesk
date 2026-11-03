@@ -6,7 +6,10 @@
   "webviews": [
     "main",
     "onboarding",
-    "notch"
+    "notch",
+    "dock-usage",
+    "dock-ticket",
+    "dock-drop"
   ],
   "permissions": [
     "core:default",

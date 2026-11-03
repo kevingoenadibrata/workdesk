@@ -11,10 +11,10 @@ export default defineConfig(() => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   // The app, the onboarding tour that opens in its own window over the display,
-  // and the strip around the MacBook notch.
+  // the strip around the MacBook notch, and the panel beside the Dock.
   build: {
     rolldownOptions: {
-      input: { main: "index.html", onboarding: "onboarding.html", notch: "notch.html" },
+      input: { main: "index.html", onboarding: "onboarding.html", notch: "notch.html", dock: "dock.html" },
     },
   },
   // 2. tauri expects a fixed port, fail if that port is not available
