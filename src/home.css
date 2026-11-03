@@ -1575,6 +1575,21 @@
 .home-compose-handto:has(:checked) {
   color: var(--text);
 }
+.home-compose-shot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.home-compose-shot:hover {
+  color: var(--text);
+}
+.home-compose-shot[hidden] {
+  display: none;
+}
 .home-compose-handbox {
   margin: 0;
   accent-color: var(--accent);

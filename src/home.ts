@@ -1,6 +1,7 @@
 import "./home.css";
+import { invoke } from "@tauri-apps/api/core";
 import { Page, el } from "./page";
-import { ArrowRight, ArrowUpRight, Bot, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Search, Settings, Trash2, X, icon } from "./icons";
+import { ArrowRight, ArrowUpRight, Bot, Camera, EthernetPort, House, ChevronLeft, ChevronRight, GitBranch, RotateCcw, Check, Copy, GitBranchPlus, GitMerge, GitPullRequest, GitPullRequestClosed, Hash, ListFilter, Pencil, Plus, Search, Settings, Trash2, X, icon } from "./icons";
 import { botSvg, type BotFace } from "./bot";
 import { providerLogo, type Provider } from "./providerLogos";
 import { showToast } from "./toast";
@@ -84,6 +85,10 @@ export interface TicketEdit {
 }
 
 const COMPOSE_KEY = "workdesk.newTicket";
+
+/** Whether Shottr (src-tauri/src/shottr.rs) is installed, asked once. */
+let shottr: Promise<boolean> | null = null;
+const shottrInstalled = () => (shottr ??= invoke<boolean>("shottr_installed").catch(() => false));
 
 /** What the last new ticket was written to, so the next starts there. */
 interface ComposeMemory {
@@ -1039,6 +1044,22 @@ export class HomePage extends Page {
     handLabel.append(handBox, icon(Bot, 13), "Hand to Claude");
     const left = el("div", "home-compose-left");
     left.append(...(editing ? [] : [handLabel]), hint);
+    // With Shottr installed, a screenshot can be taken from here; it lands in the description.
+    const shot = el("button", "home-compose-shot");
+    shot.type = "button";
+    shot.title = "Take a screenshot with Shottr; it's added to the description once Shottr copies it";
+    shot.append(icon(Camera, 13), "Screenshot");
+    shot.hidden = true;
+    void shottrInstalled().then((yes) => (shot.hidden = !yes));
+    shot.addEventListener("click", () => {
+      if (provider !== "workdesk") {
+        showError(`Images stay on this Mac, so only Workdesk tickets take them. Add them in ${providerName(provider)} instead.`);
+        return;
+      }
+      showError("");
+      invoke("shottr_grab").catch((e) => showError(String(e)));
+    });
+    left.insertBefore(shot, hint);
     foot.append(left, submit);
     modal.append(head, where, title, body, error, foot);
     backdrop.append(modal);

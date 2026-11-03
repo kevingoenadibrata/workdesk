@@ -156,3 +156,52 @@ html.dock-window body {
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
 }
+
+/* A Shottr screenshot on offer: the zone turns into a lit button. */
+.dock-shot {
+  width: calc(100% - 14px);
+  height: calc(100% - 14px);
+  margin: 0 7px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent, #fff) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #fff) 55%, transparent);
+  color: #fff;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  padding: 0 12px 0 5px;
+  min-width: 0;
+  animation: dock-shot-in 0.2s ease-out;
+}
+
+/* The screenshot itself, as tall as the button allows. */
+.dock-shot-thumb {
+  flex: none;
+  height: calc(100% - 10px);
+  max-width: 40%;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.dock-shot-thumb[hidden] {
+  display: none;
+}
+
+/* Icon and label centred in the room the thumbnail leaves. */
+.dock-shot > .icon {
+  margin-left: auto;
+}
+
+.dock-shot span {
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes dock-shot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

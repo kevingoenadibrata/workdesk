@@ -217,6 +217,12 @@ pub fn is_image(path: &Path) -> bool {
     matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "heic" | "tiff" | "tif" | "bmp")
 }
 
+/// Saves image bytes (a screenshot read from the clipboard) with the ticket
+/// images, as `save_ticket_image` does for pasted ones, and returns the path.
+pub fn save_ticket_bytes(name: &str, bytes: &[u8]) -> Result<String, String> {
+    save_in(&attachments_dir(), &plain_name(name), bytes)
+}
+
 /// Copies an image file in with the ticket images, as `save_ticket_image`
 /// does for pasted ones, and returns its new path.
 pub fn copy_ticket_image(path: &Path) -> Result<String, String> {
