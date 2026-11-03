@@ -1864,13 +1864,15 @@ export class HomeRow {
     // The icon sits on the title's line, so the limit starts under it.
     const head = el("span", "home-row-head");
     head.append(glyph, el("span", "tab-title", "Home"));
-    text.append(head, line);
-    row.append(text);
+    // The count of agents that need you sits at the title line's far right,
+    // right above the limit's logo.
     if (attention.length) {
       const badge = el("span", "monitor-badge", String(attention.length));
       if (error) badge.classList.add("error");
-      row.append(badge);
+      head.append(badge);
     }
+    text.append(head, line);
+    row.append(text);
     row.append(hint);
     // Clicking it while Home is open keeps you there.
     row.addEventListener("click", (e) => {
