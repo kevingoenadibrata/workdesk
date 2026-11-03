@@ -37,8 +37,11 @@ export interface HomeSource {
   /** Local web servers, running and recently stopped. */
   servers(): Server[];
   onChange(fn: () => void): void;
-  /** Makes a worktree for the ticket and starts Claude on it; resolves "" if cancelled. */
-  handOver(ticket: Ticket, branch: string): Promise<string>;
+  /**
+   * Makes a worktree for the ticket and starts Claude on it; resolves "" if cancelled.
+   * `askRepo` asks which repo even when one is remembered for the ticket's project.
+   */
+  handOver(ticket: Ticket, branch: string, askRepo?: boolean): Promise<string>;
   /** Checks out the ticket's branch in a repo the user picks (no agent). */
   startBranch(ticket: Ticket, branch: string): Promise<string>;
   /** Goes to the session's pane, or picks it back up in a new one. */
@@ -1019,7 +1022,7 @@ export class HomePage extends Page {
     handBox.type = "checkbox";
     handBox.checked = memory.hand;
     const handLabel = el("label", "home-compose-handto");
-    handLabel.title = "Once it's written, make a worktree for it and start a Claude session on it";
+    handLabel.title = "Once it's written, pick its repo, make a worktree for it and start a Claude session on it";
     handLabel.append(handBox, icon(Bot, 13), "Hand to Claude");
     const left = el("div", "home-compose-left");
     left.append(...(editing ? [] : [handLabel]), hint);
@@ -1214,7 +1217,8 @@ export class HomePage extends Page {
           this.showFlash(p === "workdesk" ? `Wrote ${ticket.id}` : `Created ${ticket.id} in ${ticket.project || providerName(p)}`);
           const card = this.backlogCardFor(ticket);
           card?.scrollIntoView({ block: "nearest" });
-          if (hand) void this.handOver(ticket, card);
+          // A ticket just written could be for any repo: ask, starting on the remembered one.
+          if (hand) void this.handOver(ticket, card, false, true);
           else card?.classList.add("arrived");
         },
         (err) => {
@@ -1316,12 +1320,12 @@ export class HomePage extends Page {
   /**
    * Hands `t` to Claude; once its session shows up, the card (if it's showing)
    * flies over to the agent lane. `quiet` leaves the success message to the
-   * batch it's part of.
+   * batch it's part of; `askRepo` asks which repo even if one is remembered.
    */
-  private handOver(t: Ticket, card: HTMLElement | null, quiet = false): Promise<"started" | "cancelled" | "failed"> {
+  private handOver(t: Ticket, card: HTMLElement | null, quiet = false, askRepo = false): Promise<"started" | "cancelled" | "failed"> {
     const from = card?.getBoundingClientRect();
     card?.classList.add("busy");
-    return this.source.handOver(t, branchName(t)).then(
+    return this.source.handOver(t, branchName(t), askRepo).then(
       (msg) => {
         card?.classList.remove("busy");
         if (!msg) return "cancelled";
@@ -1335,7 +1339,7 @@ export class HomePage extends Page {
       (e) => {
         card?.classList.remove("busy");
         // Try again from the ticket's card as it is by then.
-        const retry = () => void this.handOver(t, this.backlogCardFor(t) ?? card);
+        const retry = () => void this.handOver(t, this.backlogCardFor(t) ?? card, false, askRepo);
         this.showFlash(quiet ? `${t.id}: ${e}` : String(e), true, this.actionFixes(String(e), retry));
         return "failed";
       },
