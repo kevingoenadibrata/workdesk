@@ -30,6 +30,10 @@ fn run(args: &[&str]) -> Result<String, String> {
     let cli = cli().ok_or("Tailscale isn't installed.")?;
     let mut child = Command::new(cli)
         .args(args)
+        // The binary inside Tailscale.app decides whether it's the CLI or the GUI from how it was
+        // launched. Spawned from an app (no terminal), it guesses GUI, prints nothing to stdout
+        // and exits 0. This forces CLI mode; the other installs ignore it.
+        .env("TAILSCALE_BE_CLI", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -100,6 +104,9 @@ const PHONE_OS: &[&str] = &["iOS", "android"];
 
 pub fn status() -> Result<Node, String> {
     let json = run(&["status", "--json"])?;
+    if json.trim().is_empty() {
+        return Err("Tailscale gave no answer. Make sure the Tailscale app is running.".into());
+    }
     let v: Value = serde_json::from_str(&json).map_err(|e| format!("Unexpected answer from Tailscale: {e}"))?;
     Ok(parse_status(&v))
 }
