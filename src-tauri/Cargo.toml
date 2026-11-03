@@ -58,4 +58,4 @@ security-framework = "3"
 objc2 = "0.6"
 block2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSData", "NSArray", "NSGeometry", "NSString", "NSNotification", "NSOperation"] }
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder", "NSScreen", "NSWindow", "NSEvent", "NSGraphics", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSMenu", "NSMenuItem", "NSResponder", "NSScreen", "NSWindow", "NSEvent", "NSGraphics", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }

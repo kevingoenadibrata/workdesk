@@ -8,6 +8,7 @@ mod files;
 mod git;
 mod glow;
 mod keystop;
+mod menuicons;
 mod notch;
 mod onboarding;
 mod phone;
@@ -194,6 +195,7 @@ fn build_menu<R: Runtime>(h: &AppHandle<R>, loadouts: &[String]) -> tauri::Resul
 fn set_loadout_menu(app: AppHandle, names: Vec<String>) -> Result<(), String> {
     let menu = build_menu(&app, &names).map_err(|e| e.to_string())?;
     app.set_menu(menu).map_err(|e| e.to_string())?;
+    menuicons::apply(&app);
     Ok(())
 }
 
@@ -223,6 +225,7 @@ pub fn run() {
         .manage(browser::BrowserState::default())
         .setup(|app| {
             app.set_menu(build_menu(app.handle(), &[])?)?;
+            menuicons::apply(app.handle());
             if let Some(main) = app.get_webview("main") {
                 keystop::contain_keys(&main);
             }
