@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { SearchAddon, type ISearchOptions } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { fileLinkProvider } from "./filelinks";
 import { busyProcesses, gitBranches, gitCheckout, gitStatus, spawnPty, type GitInfo, type PtyHandle } from "./pty";
@@ -86,6 +87,10 @@ export class TermSession {
   private gitError?: { el: HTMLElement; timer: number };
   private pty?: PtyHandle;
   private disposed = false;
+  /** Bytes of output written to the terminal so far, so a phone's copy can line up with it. */
+  private received = 0;
+  /** Loaded the first time a phone asks for this terminal's screen. */
+  private serializer?: SerializeAddon;
 
   /** Foreground process name, polled from the backend. */
   procName = "";
@@ -550,6 +555,24 @@ export class TermSession {
     return lines;
   }
 
+  /**
+   * The screen and some scrollback as escape sequences, for the phone mirror
+   * to replay, with how many bytes of output it includes. Waits for output
+   * already received to be drawn first.
+   */
+  snapshot(): Promise<{ cols: number; rows: number; data: string; offset: number }> {
+    if (!this.serializer) {
+      this.serializer = new SerializeAddon();
+      this.term.loadAddon(this.serializer);
+    }
+    const offset = this.received;
+    return new Promise((resolve) =>
+      this.term.write("", () =>
+        resolve({ cols: this.term.cols, rows: this.term.rows, data: this.serializer!.serialize({ scrollback: 300 }), offset }),
+      ),
+    );
+  }
+
   get ptyId(): number | undefined {
     return this.pty?.id;
   }
@@ -567,7 +590,10 @@ export class TermSession {
         cols: this.term.cols,
         rows: this.term.rows,
         cwd,
-        onData: (bytes) => this.term.write(bytes),
+        onData: (bytes) => {
+          this.received += bytes.length;
+          this.term.write(bytes);
+        },
         onExit: () => this.hooks.onExit(),
       });
       if (this.disposed) return pty.kill();

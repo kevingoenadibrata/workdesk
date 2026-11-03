@@ -144,7 +144,7 @@ fn token(p: Provider) -> Option<(String, &'static str)> {
     None
 }
 
-fn client() -> &'static reqwest::Client {
+pub(crate) fn client() -> &'static reqwest::Client {
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT.get_or_init(|| {
         // reqwest is built without a crypto provider of its own (the updater's choice); use ring's.

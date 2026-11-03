@@ -52,6 +52,8 @@ export {
   Rows2,
   Search,
   Settings,
+  Smartphone,
+  Bell,
   Shell,
   Star,
   Terminal,

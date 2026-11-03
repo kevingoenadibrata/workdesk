@@ -20,6 +20,16 @@ struct Session {
     killer: Box<dyn ChildKiller + Send + Sync>,
     /// The shell's pid; any other foreground process group means a command is running.
     shell_pid: Option<u32>,
+    /// Copies of the output for phones watching this PTY (src/phone.rs).
+    tap: tokio::sync::broadcast::Sender<Tap>,
+}
+
+/// What a phone watching a PTY is sent: its output, and its new size when it changes.
+#[derive(Clone)]
+pub enum Tap {
+    /// Bytes of output, and how many came before them since the PTY started.
+    Data { at: u64, bytes: bytes::Bytes },
+    Resize(u16, u16),
 }
 
 #[derive(Default)]
@@ -93,26 +103,35 @@ pub fn pty_spawn(
     let writer = pair.master.take_writer().map_err(err)?;
     let killer = child.clone_killer();
     let shell_pid = child.process_id();
+    // With no phone watching, sending to it costs next to nothing.
+    let (tap, _) = tokio::sync::broadcast::channel(256);
+    let reader_tap = tap.clone();
 
     let id = state.next_id.fetch_add(1, Ordering::Relaxed) + 1;
     state
         .sessions
         .lock()
         .unwrap()
-        .insert(id, Session { master: pair.master, writer, killer, shell_pid });
+        .insert(id, Session { master: pair.master, writer, killer, shell_pid, tap });
 
     thread::spawn(move || {
         let mut buf = vec![0u8; 64 * 1024];
+        let mut total: u64 = 0;
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    if reader_tap.receiver_count() > 0 {
+                        let _ = reader_tap.send(Tap::Data { at: total, bytes: bytes::Bytes::copy_from_slice(&buf[..n]) });
+                    }
+                    total += n as u64;
                     if on_data.send(InvokeResponseBody::Raw(buf[..n].to_vec())).is_err() {
                         break;
                     }
                 }
             }
         }
+        drop(reader_tap);
         let code = child.wait().map(|s| s.exit_code() as i32).unwrap_or(-1);
         let _ = on_exit.send(code);
     });
@@ -131,7 +150,14 @@ pub fn pty_write(state: State<'_, PtyState>, id: u32, data: String) -> Result<()
 pub fn pty_resize(state: State<'_, PtyState>, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     let sessions = state.sessions.lock().unwrap();
     let session = sessions.get(&id).ok_or("no such pty")?;
-    session.master.resize(size(cols, rows)).map_err(err)
+    session.master.resize(size(cols, rows)).map_err(err)?;
+    let _ = session.tap.send(Tap::Resize(cols, rows));
+    Ok(())
+}
+
+/// A stream of a PTY's output (and resizes) for a phone to watch.
+pub fn watch(state: &PtyState, id: u32) -> Option<tokio::sync::broadcast::Receiver<Tap>> {
+    Some(state.sessions.lock().unwrap().get(&id)?.tap.subscribe())
 }
 
 #[tauri::command]

@@ -7374,3 +7374,137 @@ body.sidebar-collapsed:not(.sidebar-peek) .update-card {
 .browser-pane .pane-body {
   border-bottom: 0;
 }
+
+/* ---- Settings → Phone (src/phoneSettings.ts) ---- */
+.phone-card .integration-head {
+  margin-bottom: 0;
+}
+.phone-card .integration-error,
+.phone-card .integration-help:not(:empty) {
+  margin-top: 10px;
+}
+.phone-card .integration-help:empty {
+  display: none;
+}
+.phone-toggle[aria-checked="false"]:enabled {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.phone-toggle[aria-checked="false"]:hover:enabled {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+.phone-ts-logo {
+  color: var(--text);
+}
+.phone-open {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.phone-open[hidden] {
+  display: none;
+}
+.phone-qr {
+  flex: none;
+  width: 132px;
+  height: 132px;
+  padding: 6px;
+  border-radius: 8px;
+  background: #fff;
+}
+.phone-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.phone-open-text {
+  flex: 1;
+  min-width: 0;
+}
+.phone-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.phone-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--code);
+  font-size: 12px;
+  color: var(--text);
+}
+.phone-copy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.phone-copy:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+.phone-steps {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.phone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.phone-list[hidden] {
+  display: none;
+}
+.phone-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+}
+.phone-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.phone-row.online .phone-dot {
+  background: var(--group-green, #4ade80);
+}
+.phone-name {
+  font-weight: 600;
+}
+.phone-meta {
+  color: var(--faint);
+}
+.phone-tags {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.phone-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--active);
+  color: var(--muted);
+  font-size: 11px;
+}
+.phone-tag.watching {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+}

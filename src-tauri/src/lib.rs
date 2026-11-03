@@ -9,11 +9,14 @@ mod glow;
 mod keystop;
 mod notch;
 mod onboarding;
+mod phone;
 mod pty;
 mod servers;
 mod shottr;
+mod tailscale;
 mod tickets;
 mod usage;
+mod webpush;
 mod worktrees;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -123,6 +126,7 @@ pub fn run() {
                 eprintln!("dock: {e}");
             }
             shottr::start(app.handle());
+            phone::init(app.handle());
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -165,6 +169,13 @@ pub fn run() {
             shottr::shottr_grab,
             shottr::shottr_ticket,
             shottr::shottr_preview,
+            phone::phone_status,
+            phone::phone_enable,
+            phone::phone_state,
+            phone::phone_snapshot,
+            phone::phone_qr,
+            phone::phone_forget_push,
+            phone::open_tailscale,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

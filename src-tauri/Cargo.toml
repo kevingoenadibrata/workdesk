@@ -30,6 +30,17 @@ tauri-plugin-process = "2"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tauri-plugin-notification = "2"
+# The phone mirror's server (src/phone.rs). All already built for Tauri and reqwest.
+tokio = { version = "1", features = ["sync", "net", "rt", "time", "macros"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body = "1"
+http-body-util = "0.1"
+bytes = "1"
+# Web Push: VAPID signatures and payload encryption (RFC 8291). rustls already uses it.
+ring = "0.17"
+base64 = "0.22"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

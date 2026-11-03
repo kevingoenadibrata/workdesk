@@ -4,8 +4,56 @@ The goal: from your phone, see every Workdesk tab, watch a terminal live, and
 answer an agent that's waiting on you, without exposing the Mac to the
 internet. This note covers how terminals flow through Workdesk today, how
 Tailscale can carry them to the phone, the problems to solve, and a plan in
-three phases. No code is changed yet. A few decisions are yours; they're
-listed at the end.
+three phases.
+
+## Decisions, and what's built
+
+The user decided:
+
+1. **View only.** The phone monitors; it never types into a terminal.
+2. **Web Push** from the home-screen web app (iOS 16.4+ allows it on HTTPS
+   origins, and `*.ts.net` is one).
+3. **A switch and a status in Settings.** Turning it on makes it reachable from
+   the phone, and the status shows whether your phones are online on Tailscale.
+4. **Your own account only.** Each person's Workdesk uses their own Tailscale
+   login; other people on a shared tailnet see nothing.
+
+What this PR builds:
+
+- **`src-tauri/src/phone.rs`**: the server on `127.0.0.1:47390` (hyper, no
+  new runtime). Every request must have `Tailscale-User-Login` equal to the
+  Mac's own Tailscale login, a `Host` of this Mac's tailnet name (or
+  loopback), and, for POSTs, this origin. Routes: the web app's files,
+  `/api/state` (tab list, server-sent events), `/api/pty/<id>` (one
+  terminal: a snapshot, then live output), `/api/push/*`.
+- **`src-tauri/src/tailscale.rs`**: wraps the CLI: who's signed in, this
+  Mac's tailnet name, your phones (same user, iOS/Android) and whether
+  they're online, and `tailscale serve --bg --https=8443` on and off. It never
+  touches a serve port that isn't Workdesk's, and refuses to run if the port is
+  funnelled to the internet.
+- **`src-tauri/src/webpush.rs`**: VAPID (ES256) and RFC 8291 payload
+  encryption with ring. The key is kept in `~/.workdesk/phone/vapid.pk8`
+  (mode 600); subscriptions in `~/.workdesk/phone/push.json`.
+- **PTY taps** (`src-tauri/src/pty.rs`): each PTY has a broadcast channel.
+  It carries output with its byte offset, so the live stream skips exactly
+  what the snapshot already holds.
+- **Snapshots** (`TermSession.snapshot` in `src/terminal.ts`):
+  `@xterm/addon-serialize`, taken after pending output is drawn, with the
+  byte count it covers.
+- **`src/phoneFeed.ts`**: sends the tab list (tabs, groups, panes, agent
+  status and last lines, theme) after every agent poll and layout change.
+  Notifications fire on the Rust side when an agent goes to *waiting*, to
+  *error*, or from working to *idle*. They only fire while Workdesk isn't in
+  front.
+- **Settings → Phone** (`src/phoneSettings.ts`): the switch, Tailscale's
+  state (not installed / off / signed out / signed in as …), the address with
+  a QR code, and your phones (online or last seen, watching, notifications).
+- **The phone app** (`phone.html`, `src/phone/`, `public/phone-*`): tab list
+  with a "Needs you" section first, a read-only terminal view (fit the width,
+  or zoom and scroll sideways), and a bell to turn on notifications.
+
+The plan below was the starting point; "fit to phone" and replies were left
+out, since the phone only watches.
 
 ## How terminals work today
 
@@ -201,15 +249,6 @@ plumbing). Phases 2 and 3 are smaller and build on it.
 - `@xterm/addon-serialize` with xterm 6 and Claude Code's screen: does a
   replayed snapshot look identical?
 - Web Push from an iOS home-screen app on a `*.ts.net` origin.
-
-## Decisions for you
-
-1. **Scope of phase 1:** read-only mirror, or read + reply from the start?
-2. **Notifications:** Web Push in the PWA, or keep using the Discord webhook?
-3. **`serve` setup:** should Workdesk run `tailscale serve` for you, or only
-   show the command to paste?
-4. **Shared tailnets:** only your own Tailscale user, or also let other users
-   in your tailnet in (for example a work tailnet)? This note assumes only you.
 
 ## Sources
 

@@ -9,6 +9,7 @@ import { Settings } from "./settings";
 import { ShortcutsPage } from "./shortcutsPage";
 import { AgentMonitor } from "./monitor";
 import { feedNotch } from "./notchFeed";
+import { feedPhone } from "./phoneFeed";
 import { LocalServers, serverUrl } from "./servers";
 import { ticketStore, type Ticket } from "./tickets";
 import {
@@ -121,6 +122,8 @@ feedNotch(monitor, {
   newTicket: () => homePage.newTicket(),
   teleport: () => newTabIn(),
 });
+// The phone mirror (Settings → Phone) shows the tabs and agents on your phone over Tailscale.
+feedPhone(ws, monitor);
 // Files dropped on the drop zone beside the Dock (src-tauri/src/dock.rs): the
 // composer opens with them in the description. Workdesk is already in front.
 void listen<string>("dock-new-ticket", ({ payload }) => homePage.newTicket(payload));
