@@ -1230,6 +1230,11 @@ export class HomePage extends Page {
       );
     });
     title.focus();
+    // WebKit doesn't draw the caret of a field focused while its modal is still fading and rising
+    // in (typing works, the cursor stays invisible), so seat it again once the modal has landed.
+    modal.addEventListener("animationend", (e) => {
+      if (e.target === modal) reseatCaret(modal);
+    });
   }
 
   // ---- picking several tickets ----
@@ -1884,5 +1889,17 @@ export class HomeRow {
       this.page.open();
     });
     this.slot.replaceChildren(row);
+  }
+}
+
+/** Blurs and refocuses the text field focused inside `root`, keeping its selection, so WebKit draws its caret. */
+function reseatCaret(root: HTMLElement) {
+  const field = document.activeElement;
+  if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) || !root.contains(field)) return;
+  const { selectionStart, selectionEnd, selectionDirection } = field;
+  field.blur();
+  field.focus({ preventScroll: true });
+  if (selectionStart !== null && selectionEnd !== null) {
+    field.setSelectionRange(selectionStart, selectionEnd, selectionDirection ?? undefined);
   }
 }
