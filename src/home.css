@@ -1324,20 +1324,20 @@
   color: var(--muted);
 }
 
-/* The phone mirror's card, right of the servers: its QR code, and a light
-   each for this Mac and a phone being on Tailscale. */
+/* The phone mirror's card, right of the servers: its QR code on top, and
+   under it a light each for this Mac and a phone being on Tailscale. */
 .home-phone {
   flex: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px 10px 10px;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px var(--border);
   background: var(--card);
   color: var(--muted);
-  font-size: 11.5px;
-  text-align: left;
 }
 .home-phone:hover {
   background: color-mix(in srgb, var(--raised) 85%, var(--bg));
@@ -1371,8 +1371,7 @@
 }
 .home-phone-lights {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 .home-phone-light {
   display: flex;
