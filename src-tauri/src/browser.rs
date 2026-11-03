@@ -221,6 +221,7 @@ pub async fn browser_open(
     let webview = window
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width.max(1.0), height.max(1.0)))
         .map_err(|e| e.to_string())?;
+    crate::keystop::contain_keys(&webview);
     if !visible {
         webview.hide().map_err(|e| e.to_string())?;
     }
