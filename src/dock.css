@@ -187,7 +187,13 @@ html.dock-window body {
   display: none;
 }
 
+/* Icon and label centred in the room the thumbnail leaves. */
+.dock-shot > .icon {
+  margin-left: auto;
+}
+
 .dock-shot span {
+  margin-right: auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
