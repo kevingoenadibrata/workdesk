@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Search,
   Shell,
+  Smartphone,
   Star,
   Trash2,
   Type,
@@ -28,6 +29,7 @@ import {
 } from "./icons";
 import { APP_ICONS, appIconUrl, currentAppIcon, setAppIcon } from "./appIcon";
 import { LoadoutEditor } from "./loadoutEditor";
+import { buildPhoneSettings } from "./phoneSettings";
 import { DEFAULT_LOG_LINES, MAX_LOG_LINES, MIN_LOG_LINES, logLines, setLogLines } from "./monitorSettings";
 
 import { Page, el } from "./page";
@@ -74,13 +76,14 @@ function gutterPrompts(lines: number) {
   });
 }
 
-type SubPage = "teleport" | "loadouts" | "appearance" | "editor" | "integrations";
+type SubPage = "teleport" | "loadouts" | "appearance" | "editor" | "integrations" | "phone";
 const SUBPAGES: { id: SubPage; label: string; icon: IconNode }[] = [
   { id: "teleport", label: "Teleport", icon: Shell },
   { id: "loadouts", label: "Loadouts", icon: Package },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "editor", label: "Editor", icon: FileCode },
   { id: "integrations", label: "Integrations", icon: Plug },
+  { id: "phone", label: "Phone", icon: Smartphone },
 ];
 const SUBPAGE_KEY = "workdesk.settingsPage";
 
@@ -203,6 +206,7 @@ export class Settings extends Page {
       body.classList.toggle("wide", id === "loadouts");
       if (id === "editor") return this.buildEditor(content);
       if (id === "integrations") return this.buildIntegrations(content);
+      if (id === "phone") return buildPhoneSettings(content);
       if (id === "loadouts") return this.buildLoadouts(content);
       return id === "appearance" ? this.buildAppearance(content) : this.buildTeleport(content);
     };

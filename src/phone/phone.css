@@ -1,0 +1,523 @@
+/* The phone mirror's web app (src/phone/app.ts), drawn like the Mac app:
+   the sidebar's tab rows edge to edge, the pane header's chips, Home's status
+   badges, and a terminal that fills the screen. Colors come from the Mac's
+   theme once connected; until then, Workdesk's defaults from styles.css. */
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-weight: 700;
+  src: url("../../branding/fonts/bricolage-700.ttf") format("truetype");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 500;
+  src: url("../../branding/fonts/plexmono-500.ttf") format("truetype");
+}
+
+:root {
+  --bg: #0f1014;
+  --sidebar: #15161b;
+  --raised: #1d1f26;
+  --hover: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --active: color-mix(in srgb, var(--text) 8.5%, transparent);
+  --border: color-mix(in srgb, var(--text) 6%, transparent);
+  --text: #e4e6eb;
+  --muted: #8b8f9b;
+  --faint: #5c606c;
+  --accent: #7c9cff;
+  --sunken: #0b0c0f;
+  --danger: #ff6b7a;
+  --group-purple: #b48cff;
+  --group-yellow: #f2c66d;
+  --group-green: #6fd08c;
+  --display: "Bricolage Grotesque", -apple-system, sans-serif;
+  --code: "IBM Plex Mono", "JetBrains Mono", "SF Mono", Menlo, monospace;
+
+  --st-thinking: var(--group-purple);
+  --st-working: var(--accent);
+  --st-waiting: var(--group-yellow);
+  --st-idle: var(--group-green);
+  --st-error: var(--danger);
+
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--sidebar);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: inherit;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.icon {
+  flex: none;
+}
+
+/* ---- top bar: the window's title strip ---- */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: calc(env(safe-area-inset-top) + 44px);
+  padding: env(safe-area-inset-top) 6px 0 16px;
+  background: color-mix(in srgb, var(--sidebar) 90%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+}
+.live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.live.is-live::before {
+  background: var(--st-idle);
+}
+.live.is-connecting::before {
+  background: var(--st-waiting);
+}
+.live.is-down::before {
+  background: var(--danger);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  color: var(--muted);
+}
+.icon-button:active {
+  background: var(--active);
+}
+.bell {
+  margin-left: auto;
+}
+.bell.on {
+  color: var(--accent);
+}
+
+.banner {
+  padding: 10px 16px;
+  background: color-mix(in srgb, var(--danger) 14%, var(--sidebar));
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---- the tab list: the sidebar, full width ---- */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+}
+
+.section-label {
+  padding: 14px 16px 6px;
+  font-family: var(--code);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.needs-label {
+  color: var(--st-waiting);
+}
+
+.group-header {
+  padding: 12px 16px 4px;
+  color: var(--group-color);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.row {
+  display: block;
+  width: 100%;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.row:active:enabled {
+  background: var(--hover);
+}
+.row.active {
+  background: var(--active);
+  color: var(--text);
+}
+.row.needs {
+  background: color-mix(in srgb, var(--st-waiting) 7%, var(--sidebar));
+  color: var(--text);
+}
+/* A split tab's panes sit under it, without a line between. */
+.row.tab:has(+ .row.pane),
+.row.pane:has(+ .row.pane) {
+  border-bottom: 0;
+}
+.row.pane {
+  padding-top: 4px;
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 22px;
+}
+
+.tab-title,
+.pane-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  color: var(--text);
+}
+.pane-name {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.row-chevron {
+  color: var(--faint);
+  margin-right: -4px;
+}
+
+/* The sidebar's miniature of a tab's pane grid, in its color. */
+.tab-layout {
+  flex: none;
+  display: flex;
+  gap: 1px;
+  width: 15px;
+  height: 11px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tab-layout-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tab-layout-pane {
+  flex: 1;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--group-color, var(--accent)) 55%, var(--muted));
+}
+.row.active .tab-layout-pane,
+.term-title .tab-layout-pane {
+  background: var(--group-color, var(--accent));
+}
+
+/* Where a split tab's pane sits: a dot lined up under the tab's glyph. */
+.pane-dot {
+  flex: none;
+  width: 15px;
+  display: grid;
+  place-items: center;
+}
+.pane-dot::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+/* Home's status badge. */
+.badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--code);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--st, var(--muted));
+  background: color-mix(in srgb, var(--st, var(--muted)) 14%, transparent);
+}
+.badge[data-status="thinking"] {
+  --st: var(--st-thinking);
+}
+.badge[data-status="working"] {
+  --st: var(--st-working);
+}
+.badge[data-status="waiting"] {
+  --st: var(--st-waiting);
+}
+.badge[data-status="idle"] {
+  --st: var(--st-idle);
+}
+.badge[data-status="error"] {
+  --st: var(--st-error);
+}
+
+/* The pane header's facts. Everything starts at the row's edge. */
+.pane-meta {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  margin: 4px 0 0;
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--faint);
+}
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.meta-item.cwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.meta-item.cwd .icon {
+  vertical-align: -2px;
+  margin-right: 5px;
+}
+
+.pane-detail {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Home's log: the agent's latest lines, older ones dimmer. */
+.pane-log {
+  margin: 8px 0 0;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: var(--sunken);
+  font-family: var(--code);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.pane-log div {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pane-log div:not(:last-child) {
+  opacity: 0.55;
+}
+
+.empty {
+  margin: 48px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ---- a terminal: pane header, the terminal edge to edge, status bar ---- */
+
+.term-view {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: var(--bg);
+}
+
+.term-bar {
+  gap: 4px;
+  padding-left: 2px;
+}
+.term-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The pane header's chip. */
+.chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--raised) 88%, transparent);
+  font-family: var(--code);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.chip .icon {
+  color: var(--faint);
+}
+.zoom {
+  flex: none;
+  margin-right: 10px;
+}
+.zoom:active {
+  color: var(--text);
+}
+
+.term-box {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+.term-box.scroll-x {
+  overflow-x: auto;
+}
+.term-host {
+  height: 100%;
+}
+.term-box.scroll-x .term-host {
+  width: max-content;
+}
+.term-host .xterm {
+  height: 100%;
+}
+.term-host .xterm-viewport {
+  background: var(--bg) !important;
+}
+
+.term-status {
+  flex: none;
+  padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+.term-status .pane-meta {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.term-status .chip {
+  max-width: 100%;
+}
+.term-status .chip.cwd {
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.term-status .badge {
+  padding: 4px 7px;
+}
+.term-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- sheet ---- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(0 0 0 / 45%);
+}
+.sheet-card {
+  width: 100%;
+  padding: 18px 16px calc(env(safe-area-inset-bottom) + 16px);
+  border-radius: 14px 14px 0 0;
+  background: var(--raised);
+  border-top: 1px solid var(--border);
+}
+.sheet-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.sheet-body {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.sheet-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.sheet-button {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: var(--active);
+  font-weight: 500;
+}
+.sheet-button.primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+.sheet-button:disabled {
+  opacity: 0.6;
+}

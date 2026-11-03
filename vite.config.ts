@@ -11,10 +11,11 @@ export default defineConfig(() => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   // The app, the onboarding tour that opens in its own window over the display,
-  // the strip around the MacBook notch, and the panel beside the Dock.
+  // the strip around the MacBook notch, the panel beside the Dock, and the phone
+  // mirror's web app (served to your phone by src-tauri/src/phone.rs).
   build: {
     rolldownOptions: {
-      input: { main: "index.html", onboarding: "onboarding.html", notch: "notch.html", dock: "dock.html" },
+      input: { main: "index.html", onboarding: "onboarding.html", notch: "notch.html", dock: "dock.html", phone: "phone.html" },
     },
   },
   // 2. tauri expects a fixed port, fail if that port is not available
