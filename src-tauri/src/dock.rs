@@ -18,6 +18,11 @@
 //! loses a tile then), a few more times while the Dock animates, and on a timer
 //! for everything else (minimized windows, a Dock moved to another display,
 //! auto-hide, the Dock moved to the left or right edge). Width changes animate.
+//!
+//! Dimming: after `IDLE` with the pointer away from the Dock's strip (the Dock
+//! and the cards), the cards fade to `DIM_ALPHA` so they don't compete with
+//! what's on screen; pointing anywhere along the strip brings them back. `wake`
+//! keeps them lit while a card has something to offer (a Shottr screenshot).
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -54,6 +59,12 @@ const MIN_STRIP: f64 = 30.0;
 const RADIUS: f64 = 18.0;
 /// How often to re-read where the Dock is, for changes no notification covers.
 const POLL_MS: u64 = 500;
+/// How often the pointer is checked for dimming; places every `POLL_MS`.
+const TICK_MS: u64 = 100;
+/// How long without the pointer near the Dock before the cards dim.
+const IDLE: Duration = Duration::from_secs(10);
+/// The cards' opacity while dimmed.
+const DIM_ALPHA: f64 = 0.35;
 /// After an app launches or quits, re-read at these delays (ms) to follow the
 /// Dock as it adds or removes the tile and animates.
 const FOLLOW_UP_MS: [u64; 4] = [0, 150, 400, 900];
@@ -62,6 +73,28 @@ const FOLLOW_UP_MS: [u64; 4] = [0, 150, 400, 900];
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// The app launch/quit observers are added once and outlive closing the cards.
 static WATCHING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the cards are dimmed, and what keeps them lit.
+struct Idle {
+    /// The Dock's strip (left, bottom, right, top in AppKit points): the pointer
+    /// anywhere in it counts as attention. None when no screen has a bottom Dock.
+    zone: Option<(f64, f64, f64, f64)>,
+    /// When the pointer was last in the zone (or the cards opened).
+    last_active: Option<Instant>,
+    /// Kept lit until then, whatever the pointer does (see `wake`).
+    awake_until: Option<Instant>,
+    dimmed: bool,
+}
+
+static IDLE_STATE: Mutex<Idle> = Mutex::new(Idle { zone: None, last_active: None, awake_until: None, dimmed: false });
+
+/// Keeps the cards lit (lighting them if dimmed) for at least `for_`, for when
+/// a card shows something worth seeing. Safe from any thread.
+pub fn wake(for_: Duration) {
+    let mut idle = IDLE_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let until = Instant::now() + for_;
+    idle.awake_until = Some(idle.awake_until.map_or(until, |u| u.max(until)));
+}
 
 /// Opens the cards beside the Dock, unless they're already open. Must run on
 /// the main thread.
@@ -78,19 +111,35 @@ pub fn open(app: &AppHandle) -> Result<(), String> {
         }
     }
     place(app);
+    {
+        let mut idle = IDLE_STATE.lock().unwrap_or_else(|e| e.into_inner());
+        idle.last_active = Some(Instant::now());
+        idle.dimmed = false;
+    }
     if !WATCHING.swap(true, Ordering::SeqCst) {
         watch_apps(app);
     }
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let app = app.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(POLL_MS));
-        if GENERATION.load(Ordering::SeqCst) != generation {
-            break;
-        }
-        let handle = app.clone();
-        if app.get_webview_window(USAGE.0).is_none() || app.run_on_main_thread(move || place(&handle)).is_err() {
-            break;
+    std::thread::spawn(move || {
+        let mut tick = 0u64;
+        loop {
+            std::thread::sleep(Duration::from_millis(TICK_MS));
+            if GENERATION.load(Ordering::SeqCst) != generation {
+                break;
+            }
+            tick += 1;
+            let replace = tick % (POLL_MS / TICK_MS) == 0;
+            let handle = app.clone();
+            let step = move || {
+                if replace {
+                    place(&handle);
+                }
+                dim(&handle);
+            };
+            if app.get_webview_window(USAGE.0).is_none() || app.run_on_main_thread(step).is_err() {
+                break;
+            }
         }
     });
     Ok(())
@@ -272,6 +321,8 @@ fn slots() -> Slots {
                     (mid - half, mid + half)
                 }
             };
+            IDLE_STATE.lock().unwrap_or_else(|e| e.into_inner()).zone =
+                Some((screen_l, frame.origin.y, screen_r, visible.origin.y));
             let y = frame.origin.y + GAP + 1.0 + SHORTER / 2.0;
             let h = strip - GAP - 3.0 - SHORTER;
             let rect = |x: f64, w: f64| NSRect::new(NSPoint::new(x, y), NSSize::new(w, h));
@@ -284,7 +335,10 @@ fn slots() -> Slots {
             let drop = (drop_w >= MIN_WIDTH).then(|| rect(dock_r + TICKET_WIDTH + CARD_GAP, drop_w));
             Some(Slots { usage, ticket, drop })
         })
-        .unwrap_or(none)
+        .unwrap_or_else(|| {
+            IDLE_STATE.lock().unwrap_or_else(|e| e.into_inner()).zone = None;
+            none
+        })
 }
 
 /// What the Dock shows, from `defaults read com.apple.dock`.
@@ -384,6 +438,43 @@ fn place(app: &AppHandle) {
     let s = slots();
     for (label, rect) in [(USAGE.0, s.usage), (TICKET.0, s.ticket), (DROP.0, s.drop)] {
         place_card(app, label, rect);
+    }
+}
+
+/// Dims the cards once the pointer has been away from the Dock's strip for
+/// `IDLE`, and lights them again the moment it's back (or `wake` asks). Fades
+/// through each window's animator, so the glass dims along with the page.
+#[cfg(target_os = "macos")]
+fn dim(app: &AppHandle) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use objc2_app_kit::{NSEvent, NSWindow};
+    use tauri::Manager;
+
+    let now = Instant::now();
+    let p = NSEvent::mouseLocation();
+    let mut idle = IDLE_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    let pointed = idle.zone.is_some_and(|(l, b, r, t)| p.x >= l && p.x <= r && p.y >= b && p.y <= t);
+    if pointed || idle.awake_until.is_some_and(|u| now < u) {
+        idle.last_active = Some(now);
+    }
+    let dimmed = idle.last_active.is_some_and(|at| now.duration_since(at) >= IDLE);
+    if dimmed == idle.dimmed {
+        return;
+    }
+    idle.dimmed = dimmed;
+    drop(idle);
+    let alpha = if dimmed { DIM_ALPHA } else { 1.0 };
+    for (label, _) in CARDS {
+        let Some(window) = app.get_webview_window(label) else { continue };
+        let Ok(ns_window) = window.ns_window() else { continue };
+        // SAFETY: Tauri hands back its live NSWindow, and we're on the main thread.
+        let ns_window: &NSWindow = unsafe { &*(ns_window as *const NSWindow) };
+        // SAFETY: a live NSWindow on the main thread; `animator` returns a proxy for it.
+        unsafe {
+            let proxy: *mut AnyObject = msg_send![ns_window, animator];
+            let _: () = msg_send![proxy, setAlphaValue: alpha];
+        }
     }
 }
 

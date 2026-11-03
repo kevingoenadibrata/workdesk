@@ -125,6 +125,8 @@ fn tick(app: &AppHandle) {
     *HELD.lock().unwrap_or_else(|e| e.into_inner()) = Some(image);
     if shot == Shot::Offer {
         let _ = app.emit("shottr-shot", ());
+        // The drop zone offers it for 20s (SHOT_OFFER_MS in src/dock.ts): keep the cards lit.
+        crate::dock::wake(Duration::from_secs(20));
     } else if let Err(e) = ticket(app) {
         eprintln!("shottr: {e}");
     }
