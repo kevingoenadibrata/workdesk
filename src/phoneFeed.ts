@@ -118,6 +118,13 @@ export function feedPhone(ws: Workspace, monitor: AgentMonitor) {
     void invoke("phone_snapshot", { req: payload.req, snapshot }).catch(() => {});
   });
 
+  // Typing from the phone shows in the pane like any typing; a message also says who sent it.
+  void listen<{ pty: number; device: string; message: boolean }>("phone-input", ({ payload }) => {
+    if (!payload.message) return;
+    const tab = [...ws.tabs.values()].find((t) => t.sessions.some((s) => s.ptyId === payload.pty));
+    showToast(tab ? `${payload.device} sent a message to ${ws.title(tab)}` : `${payload.device} sent a message`, 3000);
+  });
+
   let watching: string[] = [];
   void listen<string[]>("phone-viewers", ({ payload }) => {
     const joined = payload.filter((n) => !watching.includes(n));

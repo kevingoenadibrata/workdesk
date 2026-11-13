@@ -440,6 +440,94 @@ button {
   background: var(--bg) !important;
 }
 
+/* The composer under a terminal (WD-32): a key row, then the message box. */
+.composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--sidebar);
+  border-top: 1px solid var(--border);
+}
+.composer[hidden] {
+  display: none;
+}
+.key-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.key-row::-webkit-scrollbar {
+  display: none;
+}
+.key {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 40px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--code);
+  font-size: 12px;
+}
+.key:active {
+  background: var(--active);
+  color: var(--text);
+}
+.input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.message {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  max-height: 120px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  /* 16px stops iOS zooming in on focus. */
+  font-size: 16px;
+  line-height: 1.25;
+  resize: none;
+  outline: none;
+}
+.message:focus {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.message::placeholder {
+  color: var(--faint);
+}
+.send {
+  flex: none;
+  color: var(--accent);
+}
+.send:disabled {
+  opacity: 0.5;
+}
+.compose-error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.4;
+}
+/* With the keyboard up, the status bar makes room for the terminal. */
+.term-view.keyboard .term-status {
+  display: none;
+}
+.term-view.keyboard .composer {
+  padding-bottom: 8px;
+}
+
 .term-status {
   flex: none;
   padding: 8px 12px calc(env(safe-area-inset-bottom) + 8px);

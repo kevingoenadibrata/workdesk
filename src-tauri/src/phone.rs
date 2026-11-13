@@ -1,12 +1,15 @@
-//! Phone mirror (WD-24): a view-only copy of Workdesk's tabs, agents and
-//! terminals for your phone, over Tailscale.
+//! Phone mirror (WD-24): a copy of Workdesk's tabs, agents and terminals for
+//! your phone, over Tailscale, that can also type into a terminal (WD-32).
 //!
 //! A small HTTP server listens on 127.0.0.1 only. `tailscale serve` forwards
 //! `https://<this-mac>.<tailnet>.ts.net:8443` to it, so the phone gets a real
 //! HTTPS origin and nothing is reachable from outside the tailnet. Every request
 //! must carry the `Tailscale-User-Login` that serve adds, and it must be the
 //! person signed in to Tailscale on this Mac, so other people on a shared
-//! tailnet can't look in. Nothing the phone sends ever reaches a terminal.
+//! tailnet can't look in. POSTs must also come from the mirror's own origin.
+//! The only thing the phone can send a terminal is `/api/pty/<id>/input`:
+//! a message (typed and submitted, as at the Mac's keyboard) or one of a few
+//! named keys (`KEYS`). The Mac's pane shows it like any other typing.
 //!
 //! The webview sends the tab list (`phone_state`) and, when a phone opens a
 //! terminal, that terminal's current screen (`phone_snapshot`). Live output
@@ -518,6 +521,12 @@ async fn handle(req: Request<Incoming>) -> Result<Resp, Infallible> {
             Ok(v) => json_resp(json!({ "key": v.public_key() })),
             Err(e) => text(StatusCode::INTERNAL_SERVER_ERROR, &e),
         },
+        (Method::POST, p) if p.starts_with("/api/pty/") && p.ends_with("/input") => {
+            match p["/api/pty/".len()..p.len() - "/input".len()].parse() {
+                Ok(id) => input(req, id, device).await,
+                Err(_) => text(StatusCode::NOT_FOUND, "No such terminal."),
+            }
+        }
         (Method::POST, "/api/push/subscribe") => subscribe(req, device).await,
         (Method::POST, "/api/push/unsubscribe") => unsubscribe(req).await,
         (Method::POST, "/api/push/test") => push_test(req).await,
@@ -692,6 +701,93 @@ fn pty_stream(id: u32) -> Resp {
         }
     });
     sse(rx)
+}
+
+// ---- typing from the phone ----
+
+/// Keys the phone's key row can press, by name, and what each sends.
+const KEYS: &[(&str, &str)] = &[
+    ("enter", "\r"),
+    ("esc", "\x1b"),
+    ("tab", "\t"),
+    ("shift-tab", "\x1b[Z"),
+    ("up", "\x1b[A"),
+    ("down", "\x1b[B"),
+    ("right", "\x1b[C"),
+    ("left", "\x1b[D"),
+    ("backspace", "\x7f"),
+    ("ctrl-c", "\x03"),
+];
+
+/// Wait between a message and the Enter that submits it, so TUIs like Claude
+/// Code don't take the Enter as part of a paste.
+const SUBMIT_DELAY: Duration = Duration::from_millis(80);
+
+#[derive(Deserialize)]
+struct Input {
+    /// A message to type, then submit with Enter.
+    #[serde(default)]
+    text: Option<String>,
+    /// Or one key from `KEYS`.
+    #[serde(default)]
+    key: Option<String>,
+}
+
+fn key_bytes(name: &str) -> Option<&'static str> {
+    KEYS.iter().find(|(k, _)| *k == name).map(|(_, b)| *b)
+}
+
+/// A message as it's typed: line breaks as Option+Enter (a new line in an agent's
+/// prompt, rather than sending it), and no other control characters, so a message
+/// can't smuggle in escape sequences.
+fn typed(text: &str) -> String {
+    let text = text.replace("\r\n", "\n");
+    let mut out = String::with_capacity(text.len());
+    for c in text.trim_end().chars() {
+        match c {
+            '\n' | '\r' => out.push_str("\x1b\r"),
+            '\t' => out.push(' '),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Types a message or presses a key in terminal `id`, and tells the Mac who did.
+async fn input(req: Request<Incoming>, id: u32, device: String) -> Resp {
+    let body: Input = match read_json(req).await {
+        Ok(b) => b,
+        Err(r) => return r,
+    };
+    let p = phone();
+    let state = p.app.state::<PtyState>();
+    let what = match (body.text.as_deref(), body.key.as_deref()) {
+        (Some(t), None) => {
+            let t = typed(t);
+            if t.trim().is_empty() {
+                return text(StatusCode::BAD_REQUEST, "Nothing to send.");
+            }
+            if let Err(e) = pty::write(&state, id, t.as_bytes()) {
+                return text(StatusCode::NOT_FOUND, &e);
+            }
+            tokio::time::sleep(SUBMIT_DELAY).await;
+            "message"
+        }
+        (None, Some(k)) => {
+            if key_bytes(k).is_none() {
+                return text(StatusCode::BAD_REQUEST, "Unknown key.");
+            }
+            k
+        }
+        _ => return text(StatusCode::BAD_REQUEST, "Send a message or a key."),
+    };
+    let bytes = if what == "message" { "\r" } else { key_bytes(what).unwrap_or_default() };
+    if let Err(e) = pty::write(&state, id, bytes.as_bytes()) {
+        return text(StatusCode::NOT_FOUND, &e);
+    }
+    let _ = p.app.emit_to("main", "phone-input", json!({ "pty": id, "device": device, "message": what == "message" }));
+    full(StatusCode::NO_CONTENT, "text/plain", "")
 }
 
 // ---- push ----
@@ -870,6 +966,21 @@ mod tests {
         // A closed pane is forgotten.
         changes(&json!({ "tabs": [] }), &mut seen);
         assert!(seen.is_empty());
+    }
+
+    #[test]
+    fn types_messages_without_control_characters() {
+        assert_eq!(typed("fix the tests"), "fix the tests");
+        assert_eq!(typed("one\r\ntwo\nthree\n\n"), "one\x1b\rtwo\x1b\rthree");
+        assert_eq!(typed("a\x1b[31mb\x03c\td"), "a[31mbc d");
+        assert_eq!(typed("  \n "), "");
+    }
+
+    #[test]
+    fn presses_only_named_keys() {
+        assert_eq!(key_bytes("enter"), Some("\r"));
+        assert_eq!(key_bytes("shift-tab"), Some("\x1b[Z"));
+        assert_eq!(key_bytes("rm -rf"), None);
     }
 
     #[test]

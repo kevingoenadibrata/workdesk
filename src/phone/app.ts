@@ -1,13 +1,15 @@
 // The phone mirror's web app (WD-24). Served by Workdesk itself
 // (src-tauri/src/phone.rs) over Tailscale, it lists the Mac's tabs and agents
-// and shows any terminal live. It can only look: nothing typed here reaches
-// the Mac. It's drawn like the Mac app: the sidebar's tab rows, the pane
-// header and status bar's chips, Home's status badges.
+// and shows any terminal live. Under a terminal, a composer sends it a message
+// (typed and submitted on the Mac, so an agent there gets your reply) or a key
+// from the key row (WD-32). It's drawn like the Mac app: the sidebar's tab
+// rows, the pane header and status bar's chips, Home's status badges.
 
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import "./phone.css";
-import { Bell, ChevronLeft, ChevronRight, Folder, Globe, SquareTerminal, icon } from "../icons";
+import type { IconNode } from "lucide";
+import { ArrowDown, ArrowUp, Bell, ChevronLeft, ChevronRight, Folder, Globe, Send, SquareTerminal, icon } from "../icons";
 import type { PhonePane, PhoneState, PhoneTab } from "../phoneFeed";
 
 const $ = <T extends HTMLElement>(tag: string, className = "", text?: string): T => {
@@ -47,7 +49,46 @@ const termBox = $("div", "term-box");
 const termHost = $("div", "term-host");
 termBox.append(termHost);
 const termStatus = $("footer", "term-status");
-termView.append(termBar, termBox, termStatus);
+
+// The composer: a key row for answering prompts, and a message box.
+const composer = $<HTMLFormElement>("form", "composer");
+const keyRow = $("div", "key-row");
+const KEY_BUTTONS: { key: string; label: string | IconNode; aria: string }[] = [
+  { key: "esc", label: "Esc", aria: "Escape" },
+  { key: "up", label: ArrowUp, aria: "Up" },
+  { key: "down", label: ArrowDown, aria: "Down" },
+  { key: "enter", label: "Enter", aria: "Enter" },
+  { key: "tab", label: "Tab", aria: "Tab" },
+  { key: "shift-tab", label: "⇧Tab", aria: "Shift Tab" },
+  { key: "ctrl-c", label: "^C", aria: "Control C" },
+];
+for (const k of KEY_BUTTONS) {
+  const b = $<HTMLButtonElement>("button", "key");
+  b.type = "button";
+  b.setAttribute("aria-label", k.aria);
+  if (typeof k.label === "string") b.textContent = k.label;
+  else b.append(icon(k.label, 14));
+  // Keep the phone's keyboard up while pressing keys.
+  b.addEventListener("pointerdown", (e) => e.preventDefault());
+  b.addEventListener("click", () => void sendInput({ key: k.key }));
+  keyRow.append(b);
+}
+const inputRow = $("div", "input-row");
+const message = $<HTMLTextAreaElement>("textarea", "message");
+message.rows = 1;
+message.placeholder = "Type a message";
+message.enterKeyHint = "send";
+message.autocapitalize = "sentences";
+const sendButton = $<HTMLButtonElement>("button", "icon-button send");
+sendButton.type = "submit";
+sendButton.setAttribute("aria-label", "Send");
+sendButton.append(icon(Send, 17));
+inputRow.append(message, sendButton);
+const composeError = $("div", "compose-error");
+composeError.hidden = true;
+composer.append(keyRow, inputRow, composeError);
+
+termView.append(termBar, termBox, composer, termStatus);
 
 const sheet = $("div", "sheet");
 sheet.hidden = true;
@@ -315,6 +356,7 @@ function termStatusFor(tab: PhoneTab, pane: PhonePane) {
   if (pane.agent) meta.prepend(badge(pane.agent, false));
   termStatus.replaceChildren(meta);
   if (pane.agent?.detail) termStatus.append($("div", "term-detail", pane.agent.detail));
+  message.placeholder = pane.agent ? `Reply to ${pane.agent.harness}` : `Type in ${pane.name}`;
 }
 
 function openTerminal(pty: number) {
@@ -326,6 +368,8 @@ function openTerminal(pty: number) {
   bar.hidden = true;
   banner.hidden = true;
   termView.hidden = false;
+  composer.hidden = false;
+  showComposeError("");
   if (location.hash !== `#pty=${pty}`) history.pushState(null, "", `${location.search}#pty=${pty}`);
 
   const family = getComputedStyle(document.documentElement).getPropertyValue("--code").trim();
@@ -364,6 +408,7 @@ function openTerminal(pty: number) {
   });
   src.addEventListener("exit", () => {
     termStatus.replaceChildren($("div", "term-detail", "This terminal closed."));
+    composer.hidden = true;
     src.close();
   });
 }
@@ -381,6 +426,62 @@ function closeTerminal(navigate = true) {
 }
 
 back.addEventListener("click", () => closeTerminal());
+
+// ---- typing into the terminal ----
+
+function showComposeError(msg: string) {
+  composeError.textContent = msg;
+  composeError.hidden = !msg;
+}
+
+/** Types into the open terminal on the Mac: a message (then Enter), or one key. */
+async function sendInput(body: { text: string } | { key: string }): Promise<boolean> {
+  const pty = openPty;
+  if (pty == null) return false;
+  if (demo) return true;
+  try {
+    await post(`/api/pty/${pty}/input`, body);
+    showComposeError("");
+    return true;
+  } catch (e) {
+    showComposeError(e instanceof Error ? e.message : "Couldn't reach your Mac.");
+    return false;
+  }
+}
+
+function growMessage() {
+  message.style.height = "auto";
+  message.style.height = `${Math.min(message.scrollHeight, 120)}px`;
+}
+message.addEventListener("input", growMessage);
+message.addEventListener("keydown", (e) => {
+  // Return sends; Shift+Return (a hardware keyboard) starts a new line.
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    composer.requestSubmit();
+  }
+});
+composer.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = message.value;
+  if (!text.trim() || sendButton.disabled) return;
+  sendButton.disabled = true;
+  if (await sendInput({ text })) {
+    message.value = "";
+    growMessage();
+  }
+  sendButton.disabled = false;
+});
+
+// The on-screen keyboard covers the page instead of shrinking it: fit the
+// terminal view to what's still visible, so the composer stays above it.
+window.visualViewport?.addEventListener("resize", () => {
+  const vv = window.visualViewport!;
+  termView.style.height = `${vv.height}px`;
+  termView.classList.toggle("keyboard", vv.height < window.innerHeight - 80);
+  window.scrollTo(0, 0);
+  layoutTerm();
+});
 zoom.addEventListener("click", () => {
   fit = !fit;
   layoutTerm();
