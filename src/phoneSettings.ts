@@ -65,7 +65,7 @@ export function buildPhoneSettings(content: HTMLElement): HTMLElement | null {
   const intro = el(
     "p",
     "page-intro",
-    "Watch your tabs, agents and terminals from your phone, at home or away. It's on whenever this Mac is on Tailscale, and only devices signed in to your own Tailscale account can open it. The phone can only look: nothing it does reaches a terminal.",
+    "Watch your tabs, agents and terminals from your phone, at home or away. It's on whenever this Mac is on Tailscale, and only devices signed in to your own Tailscale account can open it. From the phone you can also reply to an agent or type in a terminal, and it shows up here on the Mac.",
   );
 
   // Where to open it.

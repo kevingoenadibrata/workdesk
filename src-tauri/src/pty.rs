@@ -141,9 +141,14 @@ pub fn pty_spawn(
 
 #[tauri::command]
 pub fn pty_write(state: State<'_, PtyState>, id: u32, data: String) -> Result<(), String> {
+    write(&state, id, data.as_bytes())
+}
+
+/// Types `bytes` into a PTY, as if from its pane's keyboard (also used by the phone, src/phone.rs).
+pub fn write(state: &PtyState, id: u32, bytes: &[u8]) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     let session = sessions.get_mut(&id).ok_or("no such pty")?;
-    session.writer.write_all(data.as_bytes()).map_err(err)
+    session.writer.write_all(bytes).and_then(|_| session.writer.flush()).map_err(err)
 }
 
 #[tauri::command]
