@@ -122,6 +122,34 @@ html.notch-window body {
   color: #9a9aa3;
 }
 
+.panel-count {
+  margin-left: auto;
+}
+
+/* The X that shuts a pop-up early; hidden when the pointer opened the panel. */
+.peek-close {
+  display: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0 -6px 0 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #16161b;
+  color: #9a9aa3;
+  cursor: pointer;
+}
+
+.island.peeking .peek-close {
+  display: grid;
+}
+
+.peek-close:hover {
+  background: #232329;
+  color: #fff;
+}
+
 .rows {
   list-style: none;
   margin: 0;

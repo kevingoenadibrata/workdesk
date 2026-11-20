@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { loadTheme } from "./themes";
 import { botSvg } from "./bot";
-import { Orbit, TicketPlus, icon } from "./icons";
+import { Orbit, TicketPlus, X, icon } from "./icons";
 import { windowLabel, windowSummary, type Usage } from "./usage";
 import type { NotchAgent } from "./notchFeed";
 
@@ -46,7 +46,7 @@ island.innerHTML = `
   <div class="ear left"></div>
   <div class="ear right"></div>
   <div class="panel">
-    <div class="panel-head"><span>Agents</span><span class="panel-count"></span></div>
+    <div class="panel-head"><span>Agents</span><span class="panel-count"></span><button class="peek-close" title="Close"></button></div>
     <ul class="rows"></ul>
     <div class="panel-foot">
       <button class="act" data-action="ticket"><span>New ticket</span></button>
@@ -67,6 +67,10 @@ const ticketBtn = $(".act[data-action=ticket]");
 const teleportBtn = $(".act[data-action=teleport]");
 ticketBtn.prepend(icon(TicketPlus, 14));
 teleportBtn.prepend(icon(Orbit, 14));
+// Shown only while the panel popped open on its own, so it can be shut without waiting out the timer.
+const peekClose = $(".peek-close");
+peekClose.append(icon(X, 12));
+peekClose.onclick = () => collapse();
 for (const btn of [ticketBtn, teleportBtn]) {
   btn.onclick = () => {
     // The modal opens in Workdesk, so get the panel out of the way.
@@ -100,11 +104,16 @@ function collapse() {
 
 function endPeek() {
   clearTimeout(peekTimer);
-  peeking = false;
+  setPeeking(false);
   if (fresh.size) {
     fresh = new Set();
     for (const li of rows.querySelectorAll(".row.fresh")) li.classList.remove("fresh");
   }
+}
+
+function setPeeking(on: boolean) {
+  peeking = on;
+  island.classList.toggle("peeking", on);
 }
 
 /** Opens the panel for a few seconds without the pointer, to show agents that just stopped or need you. */
@@ -112,10 +121,10 @@ function peek(ids: number[]) {
   for (const id of ids) fresh.add(id);
   clearTimeout(peekTimer);
   if (!open) void refreshUsage();
-  peeking = true;
+  setPeeking(true);
   open = true;
   peekTimer = window.setTimeout(() => {
-    peeking = false;
+    setPeeking(false);
     // Leave it to the pointer if it's over the panel; it closes when the pointer leaves.
     if (!hovering) {
       endPeek();
